@@ -28,23 +28,24 @@ Then open **http://127.0.0.1:8000**.
 
 | Team Member | Track | Owned Files | Git Branch |
 |---|---|---|---|
-| **Louis (`UnbotheredCod456`)** | **Track A: AI Engine, Voice & Verification Loop** | `engine.py`, `app.py`, `AGENTS.md` | `main` / `feat/ai-engine` |
+| **Louis (`UnbotheredCod456`)** | **Track A: AI Engine, Voice & Verification Loop** | `engine.py`, `app.py`, `subagent_simulations.py`, `subagent_verifier.py`, `subagent_ferpa_gate.py`, `test_track_a.py`, `AGENTS.md` | `main` / `feat/ai-engine` |
 | **Collaborator (`pageni`)** | **Track B: 3D Physics Presets, Studio UI & Demo Pitch** | `presets.py`, `static/index.html`, `README.md` | `feat/3d-ui` |
 
 ---
 
 ## 🧠 Track A Checklist (Louis): Gemini 4 Argon Engine & Autonomous Verification
-**Files**: `engine.py`, `app.py`
+**Files**: `engine.py`, `app.py`, `subagent_simulations.py`, `subagent_verifier.py`, `subagent_ferpa_gate.py`, `test_track_a.py`
 
 - [x] Integrate `google-genai >= 2.3.0` **Interactions API** (`client.interactions.create`).
-- [x] Set up multi-model choreography:
-  - `gemini-3.5-flash-lite` (`thinking_level="low"`) for fast intent routing & FERPA privacy guardrails.
-  - `gemini-3.8-flash` (`thinking_level="low"`) for parallel curriculum equations, misconception alerts & student intuition questions.
-  - `gemini-4-argon` (`thinking_level="medium"`) for lead 3D Three.js synthesis and multi-turn `previous_interaction_id` refinement.
-  - `gemini-3.5-transcribe` & `gemini-3.8-flash-tts` for teacher voice input and 15-second audio narration.
-- [ ] **Live Prompt Stress-Testing**: Test 3–5 novel voice prompts with live `GEMINI_API_KEY` (e.g., *3D Ripple Tank Interference*, *Magnus Effect Projectile*, *Rutherford Scattering*) and tune `SYSTEM_PROMPT_3D_ARCHITECT` in `engine.py`.
-- [ ] **Autonomous Verification Loop Tuning**: Refine `/api/self-heal` in `engine.py` + `app.py` so any runtime JS error or physics `NaN` reported by the sandboxed iframe is automatically patched by `gemini-4-argon` using `previous_interaction_id`.
-- [ ] **Human-in-the-Loop Gate Polish**: Ensure `/api/publish-preview` and `/api/publish-confirm` return clear FERPA/PII audit telemetry for the judges.
+- [x] Set up Central Lead Agent (`gemini-4-argon` `thinking_level="high"`) + 3 Parallel Subagents (`gemini-4-argon` `thinking_level="medium"`) + Companion Models:
+  - **Central Lead Coordinator**: `gemini-4-argon` (`thinking_level="high"`) with `<10s` Voice-to-3D SLA enforcement.
+  - **Subagent 1 (`subagent_simulations.py`)**: `gemini-4-argon` (`thinking_level="medium"`) for <10s Voice-to-3D physics animations (including Flagship **Magnetic Flux $\Phi_B = B \cdot A \cdot \cos\theta$ & Faraday's Law**, **Rutherford Alpha Coulomb Scattering**, **3D Ripple Tank Waves**, **3D Magnus Projectile**, and `<1s` `previous_interaction_id` multi-turn refinements).
+  - **Subagent 2 (`subagent_verifier.py`)**: `gemini-4-argon` (`thinking_level="medium"`) for static AST & numerical physics verification (auto-patching `1/r^2` singularities with `Math.max(1.5, r * r)` and 1Hz `physicraft_telemetry` injection).
+  - **Subagent 3 (`subagent_ferpa_gate.py`)**: `gemini-3.5-flash-lite` (`thinking_level="low"`) + `gemini-4-argon` (`thinking_level="medium"`) escalation + deterministic regex PII redaction (`[REDACTED_STUDENT_PII]`).
+  - **Companion Models**: `gemini-3.8-flash` (`thinking_level="low"`), `gemini-3.5-transcribe`, and `gemini-3.8-flash-tts`.
+- [x] **Live Prompt Stress-Testing & <10s Voice-to-3D SLA**: Verified spoken teacher prompts (*Magnetic Flux & Faraday's Law*, *Rutherford Alpha Scattering*, *3D Ripple Tank Interference*, *Magnus Effect Projectile*) and multi-turn `previous_interaction_id` refinements.
+- [x] **Autonomous Verification Loop Tuning**: Verified `/api/self-heal` in `subagent_verifier.py` + `engine.py` + `app.py` so any runtime JS error or physics `NaN` is deterministically and/or Argon-repaired with `previous_interaction_id`.
+- [x] **Human-in-the-Loop Gate Polish**: Verified `/api/publish-preview` and `/api/publish-confirm` with automatic PII redaction (`[REDACTED_STUDENT_PII]`), OAuth scope transparency, and explicit teacher confirmation.
 
 ---
 

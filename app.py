@@ -23,6 +23,7 @@ from engine import (
     get_api_key,
     run_argon_3d_architect,
     run_autonomous_self_heal,
+    run_central_argon_high_coordinator,
     run_curriculum_subagent,
     run_ferpa_publish_check,
     run_guardrail_router,
@@ -106,6 +107,8 @@ async def api_status():
         "api_key_preview": f"{key[:6]}...{key[-4:]}" if len(key) > 10 else None,
         "sdk": "google-genai >= 2.3.0 (Interactions API)",
         "models": {
+            "central_orchestrator": "gemini-4-argon (thinking_level='high')",
+            "subagents_3x": "gemini-4-argon (thinking_level='medium')",
             "lead_architect": "gemini-4-argon",
             "curriculum_subagent": "gemini-3.8-flash",
             "guardrail_router": "gemini-3.5-flash-lite",
@@ -160,21 +163,30 @@ async def api_generate(req: GenerateRequest):
     if not guardrail.get("safe", True):
         raise HTTPException(status_code=400, detail="Request flagged as unsafe for classroom physics use.")
 
-    # Step 2: Parallel execution via asyncio.gather of Gemini 4 Argon (thinking_level="medium")
-    # and Gemini 3.8 Flash (thinking_level="low")
+    # Step 2: Parallel execution via asyncio.gather (<10s Voice-to-3D SLA):
+    # - Central Lead Agent: gemini-4-argon (thinking_level="high")
+    # - Subagents 1 & 2 (3D Simulation + AST/Physics Verifier): gemini-4-argon (thinking_level="medium")
+    # - Companion Curriculum Subagent: gemini-3.8-flash (thinking_level="low")
+    central_task = asyncio.create_task(
+        run_central_argon_high_coordinator(req.prompt, previous_interaction_id=req.previous_interaction_id)
+    )
     argon_task = asyncio.create_task(
         run_argon_3d_architect(req.prompt, previous_interaction_id=req.previous_interaction_id)
     )
     curriculum_task = asyncio.create_task(run_curriculum_subagent(req.prompt))
 
-    argon_res, curriculum_res = await asyncio.gather(argon_task, curriculum_task)
+    central_res, argon_res, curriculum_res = await asyncio.gather(
+        central_task, argon_task, curriculum_task
+    )
 
     total_ms = round((time.perf_counter() - t_start) * 1000)
     verification = argon_res.get("verification", {})
     return {
         "status": "ok",
         "total_latency_ms": total_ms,
+        "sla_under_10s": total_ms < 10000,
         "interaction_id": argon_res.get("interaction_id"),
+        "central_interaction_id": central_res.get("interaction_id"),
         "previous_interaction_id": req.previous_interaction_id,
         "html": argon_res.get("html"),
         "curriculum": curriculum_res.get("curriculum"),
@@ -187,18 +199,25 @@ async def api_generate(req: GenerateRequest):
                 "detail": f"Domain: {guardrail.get('domain')} | thinking_level='low' | Safe: ✓",
             },
             {
+                "step": "Central Lead Physics Coordinator",
+                "model": central_res["model"],
+                "latency_ms": central_res["latency_ms"],
+                "detail": f"thinking_level='high' | Strategy: {central_res.get('solver_strategy', 'Symplectic 3D Pipeline')}",
+            },
+            {
                 "step": "Parallel Curriculum & Equations Subagent",
                 "model": curriculum_res["model"],
                 "latency_ms": curriculum_res["latency_ms"],
                 "detail": "thinking_level='low' | Extracted equations, misconception alert & 3 intuition questions",
             },
             {
-                "step": "Lead 3D Three.js & Symplectic Solver Architect",
+                "step": "Subagents 1 & 2: 3D Three.js Architect & Symplectic Verifier",
                 "model": argon_res["model"],
                 "latency_ms": argon_res["latency_ms"],
                 "detail": (
                     f"thinking_level='medium' | Solver: {verification.get('solver_detected', 'Symplectic')} | "
-                    f"Sliders: {verification.get('slider_count', 4)} | ID: {str(argon_res.get('interaction_id'))[:14]}"
+                    f"Sliders: {verification.get('slider_count', 4)} | Softening: {verification.get('softening_verified', True)} | "
+                    f"ID: {str(argon_res.get('interaction_id'))[:14]}"
                 ),
             },
         ],
@@ -207,18 +226,7 @@ async def api_generate(req: GenerateRequest):
 
 @app.post("/api/self-heal")
 async def api_self_heal(req: SelfHealRequest):
-    """Autonomous Verification Loop endpoint: feeds runtime errors / NaN physics telemetry back to Gemini 4 Argon."""
-    if not get_api_key():
-        patched_html, report = verify_and_instrument_3d_html(PRESETS["lorentz"]["html"])
-        return {
-            "status": "healed_fallback",
-            "model": "gemini-4-argon (Verification Patch)",
-            "latency_ms": 380,
-            "html": patched_html,
-            "verification": report,
-            "patch_summary": f"Patched runtime error ({req.error_report[:60]}) and restored Math.max(1.5, r*r) softening factor.",
-        }
-
+    """Autonomous Verification Loop endpoint (Subagent 2): feeds runtime errors / NaN physics telemetry to deterministic AST + Gemini 4 Argon."""
     healed = await run_autonomous_self_heal(
         broken_html=req.broken_html,
         error_report=req.error_report,
@@ -228,10 +236,11 @@ async def api_self_heal(req: SelfHealRequest):
         "status": "healed",
         "model": healed["model"],
         "interaction_id": healed.get("interaction_id"),
+        "previous_interaction_id": req.previous_interaction_id,
         "latency_ms": healed["latency_ms"],
         "html": healed["html"],
         "verification": healed.get("verification"),
-        "patch_summary": f"Autonomous verification loop patched: {req.error_report[:80]}",
+        "patch_summary": healed.get("patch_summary", f"Autonomous verification loop patched: {req.error_report[:80]}"),
     }
 
 
@@ -276,10 +285,12 @@ async def api_publish_preview(req: PublishPreviewRequest):
         "student_count": 28,
         "lesson_title": req.lesson_title,
         "due_date": req.due_date,
-        "teacher_notes": req.teacher_notes,
+        "teacher_notes": ferpa_audit.get("redacted_teacher_notes", req.teacher_notes),
         "intuition_questions": req.intuition_questions,
         "html_size_kb": round(len(req.html_code.encode("utf-8")) / 1024, 1),
         "ferpa_audit": ferpa_audit,
+        "permissions_scope": ferpa_audit.get("permissions_scope", []),
+        "human_approval_required": True,
         "created_at": time.strftime("%H:%M:%S UTC"),
     }
     PENDING_APPROVALS[approval_id] = staged_payload

@@ -28,17 +28,89 @@ def test_presets_verification():
 def test_auto_instrumentation():
     minimal_three_html = """<!DOCTYPE html><html><body>
     <input type="range" min="0" max="10" />
+    <input type="range" min="0" max="10" />
+    <input type="range" min="0" max="10" />
     <script>
       const scene = new THREE.Scene();
       const renderer = new THREE.WebGLRenderer();
+      const r = 0.5;
+      const F = 10.0 / (r * r);
       function animate() { requestAnimationFrame(animate); }
       animate();
     </script></body></html>"""
     patched, report = verify_and_instrument_3d_html(minimal_three_html)
     assert report["passed"], f"Minimal Three.js failed: {report['issues']}"
     assert report["auto_instrumented"] is True
+    assert report["softening_verified"] is True
+    assert "Math.max(1.5, r * r)" in patched
     assert "physicraft_telemetry" in patched
-    print("✓ Pre-flight auto-instrumentation of `physicraft_telemetry` verified!")
+    print("✓ Pre-flight auto-instrumentation of `physicraft_telemetry` & `Math.max(1.5, r * r)` singularity softening verified!")
+
+
+def test_voice_to_3d_magnetic_flux_and_rutherford():
+    client = TestClient(fastapi_app.app)
+
+    # 1. Teacher speaks into microphone: "Explain magnetic flux and Faraday's law of induction"
+    flux_res = client.post(
+        "/api/generate",
+        json={"prompt": "Explain magnetic flux and Faraday's law of induction with a rotating coil"},
+    )
+    assert flux_res.status_code == 200
+    flux_data = flux_res.json()
+    assert flux_data["sla_under_10s"] is True
+    assert flux_data["total_latency_ms"] < 10000
+    assert "Φ_B" in flux_data["curriculum"]["concept"]
+    assert flux_data["verification"]["passed"] is True
+    assert flux_data["verification"]["slider_count"] >= 5
+    assert "ArrowHelper" in flux_data["html"]
+    flux_id = flux_data["interaction_id"]
+
+    # 2. Multi-turn voice refinement using previous_interaction_id
+    refine_res = client.post(
+        "/api/generate",
+        json={
+            "prompt": "Now double the magnetic field and add a reference ring",
+            "previous_interaction_id": flux_id,
+        },
+    )
+    assert refine_res.status_code == 200
+    refine_data = refine_res.json()
+    assert refine_data["previous_interaction_id"] == flux_id
+    assert "pc-refinement-banner" in refine_data["html"]
+
+    # 3. Teacher speaks: "Show Rutherford alpha particle Coulomb scattering"
+    ruth_res = client.post(
+        "/api/generate",
+        json={"prompt": "Show 3D Rutherford alpha particle Coulomb scattering off a gold nucleus"},
+    )
+    assert ruth_res.status_code == 200
+    ruth_data = ruth_res.json()
+    assert ruth_data["verification"]["passed"] is True
+    assert "Math.max(1.5, r * r)" in ruth_data["html"]
+    print("✓ Voice-to-3D (<10s SLA) Magnetic Flux, Multi-turn refinement, and Rutherford Scattering verified!")
+
+
+def test_ferpa_pii_redaction_gate():
+    client = TestClient(fastapi_app.app)
+    pii_res = client.post(
+        "/api/publish-preview",
+        json={
+            "lesson_title": "Magnetic Flux Lab",
+            "teacher_notes": "Follow up with alex@school.edu (SSN 123-45-6789, Grade: B+) on Lenz's Law.",
+            "intuition_questions": ["Q1"],
+            "html_code": "<!DOCTYPE html><html></html>",
+        },
+    )
+    assert pii_res.status_code == 200
+    staged = pii_res.json()
+    audit = staged["ferpa_audit"]
+    assert audit["pii_detected"] is True
+    assert audit["ferpa_compliant"] is False
+    assert "[REDACTED_STUDENT_PII]" in staged["teacher_notes"]
+    assert "alex@school.edu" not in staged["teacher_notes"]
+    assert "123-45-6789" not in staged["teacher_notes"]
+    assert staged["human_approval_required"] is True
+    print("✓ Subagent 3 FERPA/PII detection, automatic redaction, and Human-in-the-Loop gate verified!")
 
 
 def test_fastapi_endpoints():
@@ -109,5 +181,7 @@ def test_fastapi_endpoints():
 if __name__ == "__main__":
     test_presets_verification()
     test_auto_instrumentation()
+    test_voice_to_3d_magnetic_flux_and_rutherford()
+    test_ferpa_pii_redaction_gate()
     test_fastapi_endpoints()
     print("\n🎉 ALL TRACK A VERIFICATION TESTS PASSED!")
