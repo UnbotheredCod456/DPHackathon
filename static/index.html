@@ -3,438 +3,735 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>PhysiCraft — Voice-to-3D AP Physics Lab Builder (Gemini 4 Argon)</title>
+  <title>PhysiCraft — Interactive 3D Physics Studio</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap');
-    body { font-family: 'Inter', sans-serif; background: #040711; color: #f1f5f9; overflow: hidden; }
-    .mono { font-family: 'JetBrains Mono', monospace; }
-    ::-webkit-scrollbar { width: 6px; height: 6px; }
-    ::-webkit-scrollbar-track { background: #090d16; }
-    ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 3px; }
-    @keyframes pulse-ring {
-      0% { transform: scale(0.96); box-shadow: 0 0 0 0 rgba(244, 63, 94, 0.75); }
-      70% { transform: scale(1.03); box-shadow: 0 0 0 18px rgba(244, 63, 94, 0); }
-      100% { transform: scale(0.96); box-shadow: 0 0 0 0 rgba(244, 63, 94, 0); }
+    :root {
+      --bg-base: #000000;
+      --bg-surface: #0D0D10;
+      --bg-composer: #09090C;
+      --bg-stage: #050507;
+      --bg-card: rgba(255, 255, 255, 0.035);
+      --bg-card-hover: rgba(255, 255, 255, 0.065);
+      --bg-pill: rgba(255, 255, 255, 0.06);
+      --bg-pill-hover: rgba(255, 255, 255, 0.12);
+      --bg-equation: rgba(0, 0, 0, 0.42);
+      --bg-glass: rgba(18, 18, 22, 0.80);
+      --bg-modal: #121216;
+      --border-subtle: rgba(255, 255, 255, 0.08);
+      --border-strong: rgba(255, 255, 255, 0.16);
+      --text-primary: #F5F5F7;
+      --text-body: #D2D2D7;
+      --text-secondary: #86868B;
+      --accent: #1890FF;
+      --accent-strong: #0082FB;
+      --accent-hover: #36A3FF;
+      --accent-soft: rgba(24, 144, 255, 0.10);
+      --accent-border: rgba(24, 144, 255, 0.26);
+      --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Space Grotesk', 'Helvetica Neue', sans-serif;
+      --font-mono: ui-monospace, 'SFMono-Regular', Menlo, Monaco, Consolas, monospace;
     }
-    @keyframes hero-glow {
-      0%, 100% { box-shadow: 0 0 35px rgba(56, 189, 248, 0.28), inset 0 0 20px rgba(56, 189, 248, 0.15); }
-      50% { box-shadow: 0 0 55px rgba(99, 102, 241, 0.45), inset 0 0 28px rgba(56, 189, 248, 0.25); }
+
+    body.light {
+      --bg-base: #EEF2F7;
+      --bg-surface: #FFFFFF;
+      --bg-composer: #F8FAFC;
+      --bg-stage: #F2F5F9;
+      --bg-card: #F5F8FC;
+      --bg-card-hover: #EBF1F8;
+      --bg-pill: rgba(15, 23, 42, 0.055);
+      --bg-pill-hover: rgba(15, 23, 42, 0.10);
+      --bg-equation: #FFFFFF;
+      --bg-glass: rgba(255, 255, 255, 0.86);
+      --bg-modal: #FFFFFF;
+      --border-subtle: rgba(15, 23, 42, 0.085);
+      --border-strong: rgba(15, 23, 42, 0.18);
+      --text-primary: #1D1D1F;
+      --text-body: #334155;
+      --text-secondary: #64748B;
+      --accent: #0082FB;
+      --accent-strong: #0072E0;
+      --accent-hover: #1890FF;
+      --accent-soft: rgba(0, 130, 251, 0.08);
+      --accent-border: rgba(0, 130, 251, 0.24);
     }
-    .hero-mic-idle { animation: hero-glow 3s infinite ease-in-out; }
-    .mic-recording { animation: pulse-ring 1.4s infinite !important; background: linear-gradient(135deg, #e11d48, #be123c) !important; border-color: #fda4af !important; color: #fff !important; }
-    .model-pill { transition: all 0.25s ease; }
-    .model-pill.active {
-      border-color: #38bdf8;
-      background: rgba(56, 189, 248, 0.18);
-      color: #e0f2fe;
-      box-shadow: 0 0 15px rgba(56, 189, 248, 0.35);
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background-color: var(--bg-base);
+      color: var(--text-primary);
+      overflow: hidden;
+      -webkit-font-smoothing: antialiased;
+      letter-spacing: -0.012em;
+      transition: background-color 0.25s ease, color 0.25s ease;
+    }
+
+    .mono {
+      font-family: var(--font-mono);
+    }
+
+    .apple-glass {
+      background: var(--bg-glass);
+      backdrop-filter: blur(40px) saturate(180%);
+      -webkit-backdrop-filter: blur(40px) saturate(180%);
+    }
+
+    .theme-surface {
+      background-color: var(--bg-surface);
+      border-color: var(--border-subtle);
+      transition: background-color 0.25s ease, border-color 0.25s ease;
+    }
+
+    .theme-stage {
+      background-color: var(--bg-stage);
+      border-color: var(--border-subtle);
+      transition: background-color 0.25s ease, border-color 0.25s ease;
+    }
+
+    .theme-card {
+      background-color: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      transition: background-color 0.2s ease, border-color 0.2s ease;
+    }
+
+    .theme-pill {
+      background-color: var(--bg-pill);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-primary);
+      transition: all 0.2s ease;
+    }
+    .theme-pill:hover {
+      background-color: var(--bg-pill-hover);
+    }
+
+    .theme-eq-box {
+      background-color: var(--bg-equation);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-primary);
+    }
+
+    .theme-accent-card {
+      background-color: var(--accent-soft);
+      border: 1px solid var(--accent-border);
+    }
+
+    .btn-accent {
+      background-color: var(--accent);
+      color: #FFFFFF;
+      transition: all 0.2s ease;
+    }
+    .btn-accent:hover {
+      background-color: var(--accent-hover);
+    }
+
+    .text-accent {
+      color: var(--accent);
+    }
+
+    .text-theme-primary {
+      color: var(--text-primary);
+    }
+
+    .text-theme-body {
+      color: var(--text-body);
+    }
+
+    .text-theme-secondary {
+      color: var(--text-secondary);
+    }
+
+    ::-webkit-scrollbar {
+      width: 5px;
+      height: 5px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(134, 134, 139, 0.25);
+      border-radius: 999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(134, 134, 139, 0.45);
+    }
+
+    @keyframes pulse-blue {
+      0% { box-shadow: 0 0 0 0 rgba(24, 144, 255, 0.55); }
+      70% { box-shadow: 0 0 0 12px rgba(24, 144, 255, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(24, 144, 255, 0); }
+    }
+
+    @keyframes hero-breathe {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(24, 144, 255, 0.22), 0 12px 36px rgba(0, 130, 251, 0.18); }
+      50% { box-shadow: 0 0 0 10px rgba(24, 144, 255, 0.04), 0 16px 44px rgba(0, 130, 251, 0.28); }
+    }
+
+    .hero-mic-idle {
+      animation: hero-breathe 3s infinite ease-in-out;
+    }
+
+    .mic-recording {
+      animation: pulse-blue 1.5s infinite !important;
+      background: var(--accent) !important;
+      color: #FFFFFF !important;
+      border-color: var(--accent) !important;
+    }
+
+    .preset-pill {
+      color: var(--text-secondary);
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .preset-pill:hover {
+      color: var(--text-primary);
+    }
+    .preset-pill.active-preset {
+      background: var(--accent);
+      color: #FFFFFF;
+      font-weight: 600;
+      box-shadow: 0 2px 10px rgba(24, 144, 255, 0.28);
+    }
+
+    .seg-tab {
+      color: var(--text-secondary);
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .seg-tab:hover {
+      color: var(--text-primary);
+    }
+    .seg-tab.active {
+      background: var(--bg-surface);
+      color: var(--text-primary);
+      font-weight: 600;
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+    }
+    body:not(.light) .seg-tab.active {
+      background: rgba(255, 255, 255, 0.12);
+    }
+
+    .mode-btn-active {
+      background: var(--accent) !important;
+      color: #FFFFFF !important;
+      font-weight: 600;
+    }
+
+    /* KaTeX Clean Typography */
+    .katex {
+      font-size: 1.05em !important;
+      color: var(--text-primary);
+    }
+    .inline-math .katex {
+      font-size: 0.98em !important;
+      color: var(--text-primary);
     }
   </style>
 </head>
-<body class="h-screen w-screen flex flex-col select-none">
+<body class="h-screen w-screen flex flex-col select-none overflow-hidden">
 
-  <!-- TOP NAVIGATION & MODEL ORCHESTRATION BAR -->
-  <header class="h-14 border-b border-slate-800/80 bg-slate-950/90 px-4 flex items-center justify-between shrink-0 z-20">
-    <div class="flex items-center gap-3">
-      <button onclick="showVoiceHeroLaunchpad()" title="Return to Voice-to-3D Launchpad" class="w-9 h-9 rounded-xl bg-gradient-to-br from-sky-400 via-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-sky-500/20 font-extrabold text-white text-lg hover:scale-105 transition">
-        ⚛
-      </button>
-      <div>
-        <div class="flex items-center gap-2">
-          <span onclick="showVoiceHeroLaunchpad()" class="cursor-pointer font-extrabold tracking-tight text-base bg-gradient-to-r from-sky-300 via-cyan-200 to-indigo-300 bg-clip-text text-transparent">PhysiCraft</span>
-          <span class="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-sky-500/15 text-sky-300 border border-sky-500/30 font-semibold">Voice-to-3D Physics Studio</span>
+  <!-- APPLE / META MINIMALIST GLOBAL NAVBAR -->
+  <header class="h-14 px-5 border-b apple-glass flex items-center justify-between shrink-0 z-20" style="border-color: var(--border-subtle);">
+    <!-- Left: Brand + Teacher/Student Mode Toggle + Voice Launchpad -->
+    <div class="flex items-center gap-3.5">
+      <div onclick="showVoiceHeroLaunchpad()" class="flex items-center gap-2.5 cursor-pointer group" title="Open Voice-to-3D Launchpad">
+        <div class="w-7 h-7 rounded-lg btn-accent flex items-center justify-center shadow-sm group-hover:scale-105 transition">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M12 2v4M12 18v4M2 12h4M18 12h4"/>
+          </svg>
         </div>
-        <p class="text-[11px] text-slate-400">1. Verify Physics Accuracy (<span class="mono text-sky-300">Argon High</span>) → 2. Model 3D Simulation (<span class="mono text-indigo-300">Argon Medium</span>)</p>
+        <span class="font-semibold text-[16px] tracking-tight text-theme-primary">PhysiCraft</span>
       </div>
-    </div>
 
-    <!-- Live Model Choreography Strip -->
-    <div class="hidden xl:flex items-center gap-1.5 bg-slate-900/90 border border-slate-800 rounded-xl px-2.5 py-1 text-[11px] mono">
-      <span id="pill-transcribe" class="model-pill px-2 py-0.5 rounded-md border border-slate-800 text-slate-400">🎙️ 3.5-transcribe</span>
-      <span class="text-slate-600">→</span>
-      <span id="pill-lite" class="model-pill px-2 py-0.5 rounded-md border border-slate-800 text-slate-400">🛡️ 3.5-flash-lite</span>
-      <span class="text-slate-600">→</span>
-      <span id="pill-argon-high" class="model-pill px-2 py-0.5 rounded-md border border-emerald-500/40 text-emerald-300 font-semibold">🔬 argon (high: physics check)</span>
-      <span class="text-slate-600">→</span>
-      <span id="pill-argon" class="model-pill px-2 py-0.5 rounded-md border border-sky-500/40 text-sky-300 font-semibold">🧊 3× argon (med: 3D model)</span>
-      <span class="text-slate-600">+</span>
-      <span id="pill-flash" class="model-pill px-2 py-0.5 rounded-md border border-slate-800 text-slate-400">⚡ 3.8-flash</span>
-      <span class="text-slate-600">→</span>
-      <span id="pill-tts" class="model-pill px-2 py-0.5 rounded-md border border-slate-800 text-slate-400">🔊 3.8-flash-tts</span>
-    </div>
-
-    <!-- Right Controls: Voice Launchpad, Verification Status, Classroom Gate, API Key -->
-    <div class="flex items-center gap-2">
-      <button onclick="showVoiceHeroLaunchpad()" class="px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-sky-300 text-xs font-semibold flex items-center gap-1.5 transition">
-        <span>🎙️</span>
-        <span>Voice Launchpad</span>
-      </button>
-
-      <!-- Autonomous Verification Badge -->
-      <div id="verify-badge" class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-900/90 border border-slate-700 text-slate-300 text-xs font-medium">
-        <span id="verify-dot" class="w-2 h-2 rounded-full bg-sky-400"></span>
-        <span id="verify-text" class="mono text-[11px]">Awaiting Voice Prompt</span>
-        <button id="btn-fault-test" onclick="triggerFaultInjectionTest()" title="Inject a physics NaN fault to demonstrate Gemini 4 Argon's Autonomous Verification & Self-Healing Loop!" class="hidden ml-1 px-1.5 py-0.5 rounded bg-emerald-500/20 hover:bg-rose-500/30 hover:text-rose-200 text-[10px] border border-emerald-400/30 transition">
-          Test Self-Heal
+      <!-- Subtle Teacher / Student Segmented Pill -->
+      <div class="flex items-center p-0.5 rounded-full theme-pill">
+        <button id="mode-teacher-btn" onclick="setViewMode('teacher')" class="mode-btn-active px-3 py-1 rounded-full text-xs font-medium transition">
+          Teacher
+        </button>
+        <button id="mode-student-btn" onclick="setViewMode('student')" class="px-3 py-1 rounded-full text-xs font-medium transition text-theme-secondary hover:opacity-90">
+          Student
         </button>
       </div>
 
-      <!-- Human-in-the-Loop Publish Button -->
-      <button onclick="openPublishModal()" class="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs flex items-center gap-1.5 shadow-lg shadow-indigo-600/25 transition">
-        <span>🎓 Assign to Class</span>
-        <span id="published-counter" class="hidden px-1.5 py-0.2 bg-white/20 rounded-full text-[10px]">0</span>
+      <!-- Voice Launchpad Pill -->
+      <button onclick="showVoiceHeroLaunchpad()" class="px-3 py-1 rounded-full theme-pill text-xs font-medium flex items-center gap-1.5 text-accent">
+        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+          <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3"/>
+        </svg>
+        <span>Voice Launchpad</span>
+      </button>
+    </div>
+
+    <!-- Center: 4 Hero Physics Labs (Segmented Pill Switcher) -->
+    <nav id="presets-grid" class="hidden lg:flex items-center p-1 rounded-full theme-pill gap-0.5">
+      <button onclick="loadPreset('lorentz')" id="preset-lorentz" class="preset-pill active-preset px-3.5 py-1 rounded-full text-xs">
+        Lorentz Force
+      </button>
+      <button onclick="loadPreset('kepler')" id="preset-kepler" class="preset-pill px-3.5 py-1 rounded-full text-xs">
+        Kepler Orbits
+      </button>
+      <button onclick="loadPreset('pendulum')" id="preset-pendulum" class="preset-pill px-3.5 py-1 rounded-full text-xs">
+        Double Pendulum
+      </button>
+      <button onclick="loadPreset('waves')" id="preset-waves" class="preset-pill px-3.5 py-1 rounded-full text-xs">
+        Wave Interference
+      </button>
+    </nav>
+
+    <!-- Right: Light/Dark Theme Toggle, Verification Status, Assign to Class, API Key -->
+    <div class="flex items-center gap-2">
+      <!-- Light / Dark Theme Toggle Pill -->
+      <button id="btn-theme-toggle" onclick="toggleTheme()" title="Switch between Light and Dark Mode" class="px-3 py-1.5 rounded-full theme-pill text-xs flex items-center gap-1.5">
+        <svg id="theme-icon-sun" class="w-3.5 h-3.5 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1">
+          <circle cx="12" cy="12" r="4"/>
+          <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>
+        </svg>
+        <svg id="theme-icon-moon" class="w-3.5 h-3.5 text-accent hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+        </svg>
+        <span id="theme-label" class="font-medium text-[11.5px]">Light</span>
       </button>
 
-      <!-- API Key Button -->
-      <button onclick="openKeyModal()" id="btn-api-key" class="px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 text-xs flex items-center gap-1.5 transition">
-        <span id="key-dot" class="w-2 h-2 rounded-full bg-amber-400"></span>
-        <span id="key-label">API Key</span>
+      <!-- Calm Physics Verification Pill -->
+      <div id="verify-badge" class="flex items-center gap-2 px-3 py-1 rounded-full theme-pill text-xs">
+        <span id="verify-dot" class="w-2 h-2 rounded-full bg-[#30D158] inline-block"></span>
+        <span id="verify-text" class="text-[11.5px] font-medium text-theme-body">60 FPS · Verified</span>
+        <button id="btn-fault-test" onclick="triggerFaultInjectionTest()" title="Test Gemini 4 Argon Autonomous Self-Healing" class="ml-1 text-[11px] text-theme-secondary hover:text-[#1890FF] transition">
+          Self-Heal
+        </button>
+      </div>
+
+      <!-- Share to Google Classroom Pill -->
+      <button onclick="openPublishModal()" class="px-3.5 py-1.5 rounded-full btn-accent font-medium text-xs flex items-center gap-1.5 shadow-sm">
+        <span>Assign to Class</span>
+        <span id="published-counter" class="hidden px-1.5 py-0.2 rounded-full bg-black/25 text-white text-[10px]">0</span>
+      </button>
+
+      <!-- API Key Pill -->
+      <button onclick="openKeyModal()" id="btn-api-key" class="px-3 py-1.5 rounded-full theme-pill text-xs flex items-center gap-1.5">
+        <span id="key-dot" class="w-1.5 h-1.5 rounded-full bg-[#1890FF]"></span>
+        <span id="key-label" class="text-theme-secondary">API Key</span>
       </button>
     </div>
   </header>
 
-  <!-- MAIN WORKSPACE -->
-  <div class="flex-1 flex overflow-hidden">
+  <!-- MAIN WORKSPACE: SPACIOUS APPLE SPLIT VIEW -->
+  <div class="flex-1 flex overflow-hidden min-h-0 p-3 gap-3">
 
-    <!-- LEFT PANEL: VOICE INPUT, PHYSICS ACCURACY AUDIT & DISCUSSION PROMPTS (430px) -->
-    <aside class="w-[430px] border-r border-slate-800/80 bg-slate-950/75 flex flex-col shrink-0 overflow-y-auto p-4 gap-3.5">
+    <!-- LEFT LEARNING SHEET (Clean, Breathable, Uncluttered) -->
+    <aside class="w-[396px] rounded-2xl theme-surface border flex flex-col shrink-0 overflow-hidden shadow-xl">
 
-      <!-- PRIMARY FEATURE: SARAH'S VOICE-TO-3D PROMPT BOX -->
-      <div class="bg-gradient-to-b from-slate-900/95 to-slate-900/75 border border-sky-500/30 rounded-2xl p-3.5 flex flex-col gap-2.5 shadow-lg shadow-sky-950/30">
-        <div class="flex items-center justify-between">
-          <label class="text-xs font-extrabold text-sky-300 flex items-center gap-1.5">
-            <span>🎙️ Speak or Type Any Physics Concept</span>
-          </label>
-          <span id="session-badge" class="text-[10px] mono px-2 py-0.5 rounded bg-slate-800 text-slate-400">Voice-to-3D Ready</span>
+      <!-- Concept Header -->
+      <div class="px-6 pt-5 pb-3.5 shrink-0">
+        <div class="flex items-center justify-between mb-1">
+          <span class="text-xs font-semibold text-accent" id="cur-subtitle">AP Physics C · Electromagnetism</span>
+          <span id="session-badge" class="text-[11px] text-theme-secondary">Interactive Lab</span>
         </div>
+        <h1 class="text-[20px] font-semibold text-theme-primary tracking-tight leading-snug" id="cur-title">
+          Lorentz Magnetic Force & Cyclotron Motion
+        </h1>
 
-        <textarea id="prompt-input" rows="3" class="w-full rounded-xl bg-slate-950/90 border border-slate-800 focus:border-sky-400 focus:outline-none p-2.5 text-xs text-slate-100 leading-relaxed resize-none select-text" placeholder="Speak naturally into your laptop, e.g.: 'Explain magnetic flux through a rotating coil and show how Faraday's law induces an alternating current...'"></textarea>
-
-        <div class="flex items-center gap-2">
-          <button id="btn-mic" onclick="toggleVoiceRecording()" class="px-3.5 py-2 rounded-xl bg-rose-600/20 hover:bg-rose-600/30 border border-rose-500/40 text-rose-200 text-xs font-bold flex items-center gap-1.5 transition shrink-0">
-            <span id="mic-icon">🎤</span>
-            <span id="mic-label">Speak Concept</span>
-          </button>
-
-          <button id="btn-generate" onclick="generateSimulation(false)" class="flex-1 py-2 px-3 rounded-xl bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white font-bold text-xs shadow-lg shadow-sky-500/20 flex items-center justify-center gap-1.5 transition">
-            <span>🔬 Verify Physics & Model 3D</span>
-          </button>
-        </div>
-
-        <!-- Multi-Turn Follow-up Bar (uses previous_interaction_id) -->
-        <div class="pt-1.5 border-t border-slate-800/80 flex items-center gap-1.5">
-          <input id="followup-input" type="text" class="flex-1 bg-slate-950/80 border border-slate-800 rounded-lg px-2.5 py-1.5 text-[11px] text-slate-200 focus:border-sky-400 focus:outline-none select-text" placeholder="Follow-up voice/text refinement (uses previous_interaction_id)..." />
-          <button onclick="generateSimulation(true)" class="px-2.5 py-1.5 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/30 text-sky-300 text-[11px] font-semibold transition shrink-0">
-            Refine ↻
+        <!-- Single Clean Audio Overview Pill -->
+        <div class="mt-3 flex items-center gap-2">
+          <button id="btn-tts" onclick="playTeacherNarration()" class="px-3.5 py-1.5 rounded-full theme-pill text-xs font-medium flex items-center gap-2">
+            <svg class="w-3.5 h-3.5 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
+            </svg>
+            <span id="tts-label">Listen to 15s Overview</span>
           </button>
         </div>
       </div>
 
-      <!-- STEP 1 OUTPUT: PRE-MODELING PHYSICS ACCURACY & CONSERVATION AUDIT CARD -->
-      <div id="physics-audit-card" class="bg-emerald-950/25 border border-emerald-500/35 rounded-2xl p-3 flex flex-col gap-1.5">
-        <div class="flex items-center justify-between">
-          <span class="text-[10px] uppercase tracking-wider font-extrabold text-emerald-400 flex items-center gap-1">
-            <span>🔬 Step 1: Physics Accuracy Audit (Argon High)</span>
-          </span>
-          <span id="audit-badge" class="text-[10px] mono px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-semibold">Standby</span>
-        </div>
-        <div id="audit-law" class="text-xs font-semibold text-white mono leading-snug">
-          Speak a physics concept — Gemini 4 Argon first verifies physical laws & conservation invariants before building the 3D model.
-        </div>
-        <div id="audit-details" class="hidden space-y-1 pt-1 border-t border-emerald-500/20 text-[11px] text-slate-300">
-          <div><strong class="text-emerald-300">Conservation Check:</strong> <span id="audit-invariant"></span></div>
-          <div><strong class="text-sky-300">Numerical Solver:</strong> <span id="audit-solver" class="mono"></span></div>
-          <div><strong class="text-indigo-300">3D Vector Visualizers:</strong> <span id="audit-vectors"></span></div>
+      <!-- Segmented Tab Bar (2 Simple Views for Students & Teachers) -->
+      <div class="px-6 pb-3 shrink-0">
+        <div class="grid grid-cols-2 p-1 rounded-xl theme-pill text-xs">
+          <button id="tab-btn-lesson" onclick="switchInspectorTab('lesson')" class="seg-tab active py-1.5 px-3 rounded-lg text-center">
+            Concept & Equations
+          </button>
+          <button id="tab-btn-questions" onclick="switchInspectorTab('questions')" class="seg-tab py-1.5 px-3 rounded-lg text-center flex items-center justify-center gap-1.5">
+            <span>Student Check</span>
+            <span id="questions-count-badge" class="px-1.5 py-0.2 rounded-full bg-[#1890FF]/15 text-accent font-semibold text-[10px]">3</span>
+          </button>
         </div>
       </div>
 
-      <!-- STEP 2 OUTPUT: TEACHER'S GUIDE, EQUATIONS & STUDENT DISCUSSION PROMPTS -->
-      <div class="bg-slate-900/70 border border-slate-800/90 rounded-2xl p-3.5 flex flex-col gap-3 flex-1">
-        <div class="flex items-center justify-between">
-          <div>
-            <div class="text-[10px] uppercase tracking-wider text-sky-400 font-bold" id="cur-subtitle">Voice-to-3D Curriculum Co-Pilot</div>
-            <h2 class="text-sm font-bold text-white leading-snug" id="cur-title">Waiting for Sarah's Spoken Concept...</h2>
+      <!-- Scrollable Content Area -->
+      <div class="flex-1 min-h-0 overflow-y-auto px-6 pb-4">
+
+        <!-- TAB 1: EQUATIONS, PHYSICS AUDIT & CONCEPT GUIDE -->
+        <div id="tab-panel-lesson" class="space-y-3.5">
+
+          <!-- Governing Equations Card -->
+          <div class="rounded-2xl theme-card p-4">
+            <div class="text-[11px] font-medium text-theme-secondary mb-2">Governing Equations</div>
+            <div id="cur-equations" class="space-y-2"></div>
           </div>
-          <button id="btn-tts" onclick="playTeacherNarration()" class="px-2.5 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 text-xs font-semibold flex items-center gap-1.5 shrink-0 transition">
-            <span id="tts-icon">🔊</span>
-            <span id="tts-label">15s Audio Guide</span>
-          </button>
-        </div>
 
-        <!-- Key Equations -->
-        <div class="bg-slate-950/90 border border-slate-800/80 rounded-xl p-2.5">
-          <div class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold mb-1.5">📐 Verified Governing Equations</div>
-          <div id="cur-equations" class="flex flex-wrap gap-1.5 mono text-xs text-sky-300">
-            <span class="text-slate-500 text-[11px]">Equations appear automatically after Step 1 Physics Check.</span>
+          <!-- Step 1 Physics Accuracy & Conservation Audit Card (Collaborator Track A Integration) -->
+          <div id="physics-audit-card" class="rounded-2xl theme-card p-3.5">
+            <div class="flex items-center justify-between mb-1">
+              <span class="text-[11px] font-semibold text-accent">Physics & Solver Verification</span>
+              <span id="audit-badge" class="text-[10px] px-2 py-0.5 rounded-full bg-[#30D158]/15 text-[#30D158] font-medium">Verified</span>
+            </div>
+            <div id="audit-law" class="inline-math text-xs text-theme-primary font-medium leading-snug">
+              Symplectic & conservation laws verified by Gemini 4 Argon.
+            </div>
+            <div id="audit-details" class="hidden mt-2 pt-2 border-t space-y-1 text-[11px] text-theme-secondary" style="border-color: var(--border-subtle);">
+              <div><strong class="text-theme-primary">Conservation:</strong> <span id="audit-invariant" class="inline-math"></span></div>
+              <div><strong class="text-theme-primary">Solver:</strong> <span id="audit-solver" class="mono"></span></div>
+              <div><strong class="text-theme-primary">3D Vectors:</strong> <span id="audit-vectors" class="inline-math"></span></div>
+            </div>
+          </div>
+
+          <!-- Student Mode Privacy Notice -->
+          <div id="student-mode-mask" class="hidden rounded-2xl theme-accent-card p-4">
+            <div class="flex items-center justify-between mb-1.5">
+              <span class="text-xs font-semibold text-accent">Student Mode Active</span>
+              <button onclick="toggleTeacherNotesReveal()" class="px-2.5 py-1 rounded-full theme-pill text-[11px] font-medium">
+                Show Teacher Notes
+              </button>
+            </div>
+            <p class="text-xs text-theme-secondary leading-relaxed">
+              Instructor notes and misconception answers are hidden for classroom projection. Switch to <strong>Student Check</strong> to explore the discussion questions.
+            </p>
+          </div>
+
+          <!-- Teacher Guide & Misconception Cards -->
+          <div id="teacher-notes-content" class="space-y-3.5">
+            <div class="rounded-2xl theme-card p-4">
+              <div class="text-[11px] font-medium text-theme-secondary mb-1.5">What to Observe</div>
+              <p id="cur-guide" class="inline-math text-theme-body text-[13px] leading-relaxed"></p>
+            </div>
+
+            <div class="rounded-2xl theme-accent-card p-4">
+              <div class="text-[11px] font-semibold text-accent mb-1.5">Common Misconception</div>
+              <p id="cur-misconception" class="inline-math text-theme-body text-[13px] leading-relaxed"></p>
+            </div>
           </div>
         </div>
 
-        <!-- Teacher Demo Cheatsheet -->
-        <div class="bg-sky-950/30 border border-sky-500/25 rounded-xl p-2.5 text-xs leading-relaxed">
-          <div class="font-bold text-sky-300 mb-0.5 flex items-center gap-1">💡 Sarah's Interactive Slider & Vector Guide</div>
-          <p id="cur-guide" class="text-slate-300 text-[11.5px]">Speak into your microphone or pick an example above to generate a 3D simulation with sliders and vector arrows.</p>
+        <!-- TAB 2: STUDENT INTUITION QUESTIONS -->
+        <div id="tab-panel-questions" class="hidden space-y-3">
+          <p class="text-xs text-theme-secondary leading-relaxed">
+            Predict what will happen, then test your intuition using the 3D controls on the right. Click a question to mark it completed.
+          </p>
+          <ol id="cur-questions" class="space-y-2.5 text-[13px] text-theme-primary"></ol>
         </div>
 
-        <!-- Misconception Alert -->
-        <div class="bg-rose-950/30 border border-rose-500/25 rounded-xl p-2.5 text-xs leading-relaxed">
-          <div class="font-bold text-rose-300 mb-0.5 flex items-center gap-1">⚠️ Common Student Misconception Fixed</div>
-          <p id="cur-misconception" class="text-slate-300 text-[11.5px]">PhysiCraft highlights the #1 textbook misconception that 3D spatial manipulation resolves.</p>
-        </div>
+      </div>
 
-        <!-- Student Discussion Prompts -->
-        <div>
-          <div class="text-[11px] font-bold text-slate-300 mb-1.5">💬 Student Discussion Prompts</div>
-          <ol id="cur-questions" class="space-y-1.5 text-[11.5px] text-slate-300 list-decimal list-inside">
-            <li class="bg-slate-950/60 border border-slate-800/80 rounded-lg px-2.5 py-1.5 text-slate-500">Discussion prompts will be generated alongside your 3D model.</li>
-          </ol>
+      <!-- UNIFIED COMPOSER BAR (Voice or Text Concept Input + Stateful Refinement) -->
+      <div class="p-4 border-t shrink-0" style="background-color: var(--bg-composer); border-color: var(--border-subtle);">
+        <div class="rounded-2xl theme-card p-2.5 transition" style="border-color: var(--border-strong);">
+          <textarea id="prompt-input" rows="2" class="w-full bg-transparent text-[12.5px] text-theme-primary leading-relaxed resize-none focus:outline-none select-text placeholder-[#86868B]" placeholder="Describe any 3D physics concept (e.g. box on a ramp, Hooke's spring, Snell's law, collisions) or refine this scene..."></textarea>
+          <input id="followup-input" type="hidden" value="" />
+
+          <div class="flex items-center justify-between pt-2 mt-1 border-t" style="border-color: var(--border-subtle);">
+            <div class="flex items-center gap-1.5">
+              <!-- Voice Input Pill -->
+              <button id="btn-mic" onclick="toggleVoiceRecording()" class="px-2.5 py-1 rounded-full theme-pill text-[11px] font-medium flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full bg-[#1890FF]"></span>
+                <span id="mic-label">Voice</span>
+              </button>
+
+              <!-- Refine Scene Button (uses previous_interaction_id) -->
+              <button onclick="generateSimulation(true)" title="Modify the active 3D scene using stateful previous_interaction_id" class="px-2.5 py-1 rounded-full theme-pill text-theme-body text-[11px] font-medium">
+                Refine Scene
+              </button>
+            </div>
+
+            <!-- Primary Generate Button -->
+            <button id="btn-generate" onclick="generateSimulation(false)" class="px-3.5 py-1 rounded-full btn-accent font-medium text-[11.5px] flex items-center gap-1.5 shadow-sm">
+              <span>Generate 3D</span>
+              <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <path d="M5 12h14M12 5l7 7-7 7"/>
+              </svg>
+            </button>
+          </div>
         </div>
       </div>
 
     </aside>
 
-    <!-- RIGHT PANEL: VOICE-TO-3D HERO STAGE + INTERACTIVE 3D SANDBOX -->
-    <main class="flex-1 flex flex-col bg-slate-950 relative overflow-hidden">
+    <!-- RIGHT 3D STAGE (Framed Rounded Viewport, Maximum Focus on 3D Simulation) -->
+    <main class="flex-1 rounded-2xl theme-stage border relative overflow-hidden shadow-xl flex flex-col">
 
-      <!-- VOICE-TO-3D HERO LAUNCHPAD (SHOWN BY DEFAULT — ZERO PRESETS, UNIVERSAL VOICE-TO-3D!) -->
-      <div id="voice-hero-stage" class="absolute inset-0 z-10 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900 via-slate-950 to-[#040711] flex flex-col items-center justify-center p-8 overflow-y-auto">
-        <div class="max-w-3xl w-full flex flex-col items-center text-center">
-
-          <!-- 2-Step Pipeline Pill -->
-          <div class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-slate-900/90 border border-sky-500/30 text-xs text-sky-300 mb-5 shadow-lg">
-            <span class="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold text-[10px]">STEP 1</span>
-            <span>Verify Physics Accuracy (<code class="mono">gemini-4-argon high</code>)</span>
-            <span class="text-slate-500">→</span>
-            <span class="px-2 py-0.5 rounded-full bg-sky-500/20 text-sky-300 font-bold text-[10px]">STEP 2</span>
-            <span>Model Any 3D Concept, Vectors & Explanation (<code class="mono">&lt;15s</code>)</span>
+      <!-- VOICE-TO-3D HERO LAUNCHPAD OVERLAY (Accessible via "Voice Launchpad" button, dismissible to 3D Canvas) -->
+      <div id="voice-hero-stage" class="hidden absolute inset-0 z-20 apple-glass flex flex-col items-center justify-center p-8 overflow-y-auto">
+        <div class="max-w-2xl w-full flex flex-col items-center text-center">
+          <div class="inline-flex items-center gap-2 px-3.5 py-1 rounded-full theme-accent-card text-xs text-accent font-medium mb-4">
+            <span>Gemini 4 Argon · Universal Voice-to-3D Physics Studio</span>
           </div>
 
-          <h1 class="text-3xl sm:text-4xl font-extrabold tracking-tight text-white mb-3 leading-tight">
-            Request Any Physics Concept.<br/>
-            <span class="bg-gradient-to-r from-sky-400 via-cyan-300 to-indigo-400 bg-clip-text text-transparent">Accurately Modeled & Explained in 3D in &lt;15s.</span>
-          </h1>
+          <h2 class="text-3xl sm:text-4xl font-semibold tracking-tight text-theme-primary mb-3 leading-tight">
+            Speak or type any physics concept.<br/>
+            <span class="text-accent">Modeled in interactive 3D in seconds.</span>
+          </h2>
 
-          <p class="text-sm text-slate-300 max-w-2xl mb-6 leading-relaxed">
-            No canned presets required. Speak or type <strong class="text-white">any</strong> physics concept — inclined planes, free-body diagrams, springs, collisions, torque, optics, thermodynamics, electromagnetism, or orbits. First, <strong class="text-emerald-300">Gemini 4 Argon</strong> verifies the governing laws and conservation invariants, then models an interactive 3D simulation with live vector arrows and an on-screen explanation.
+          <p class="text-xs sm:text-sm text-theme-secondary max-w-xl mb-6 leading-relaxed">
+            Gemini 4 Argon verifies the governing equations and conservation invariants first, then synthesizes an interactive Three.js simulation with real-time 3D force vectors and sliders.
           </p>
 
-          <!-- GIANT CENTRAL VOICE MICROPHONE BUTTON -->
+          <!-- Central Microphone Button -->
           <div class="flex flex-col items-center mb-6">
-            <button id="btn-hero-mic" onclick="toggleVoiceRecording()" class="hero-mic-idle w-28 h-28 rounded-full bg-gradient-to-br from-sky-500/25 via-indigo-500/25 to-purple-600/25 border-2 border-sky-400/60 hover:border-sky-300 flex flex-col items-center justify-center gap-1.5 transition transform hover:scale-105 cursor-pointer">
-              <span id="hero-mic-icon" class="text-4xl">🎙️</span>
-              <span id="hero-mic-label" class="text-[11px] font-extrabold uppercase tracking-wider text-sky-200">Tap & Speak</span>
+            <button id="btn-hero-mic" onclick="toggleVoiceRecording()" class="hero-mic-idle w-24 h-24 rounded-full theme-accent-card hover:scale-105 flex flex-col items-center justify-center gap-1.5 transition cursor-pointer">
+              <svg class="w-8 h-8 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3"/>
+              </svg>
+              <span id="hero-mic-label" class="text-[10px] font-semibold uppercase tracking-wider text-accent">Tap & Speak</span>
             </button>
-            <div id="hero-voice-status" class="mt-3 text-xs mono text-slate-400">
-              Tap the microphone and speak any physics concept aloud
+            <div id="hero-voice-status" class="mt-2.5 text-xs text-theme-secondary">
+              Click to speak naturally or type a concept below
             </div>
           </div>
 
-          <!-- DIRECT UNIVERSAL CONCEPT INPUT BAR ON HERO STAGE -->
-          <div class="w-full max-w-2xl bg-slate-900/90 border border-sky-500/35 rounded-2xl p-3 shadow-2xl">
+          <!-- Direct Concept Input Bar on Hero Launchpad -->
+          <div class="w-full max-w-xl rounded-2xl theme-surface border p-2.5 shadow-xl mb-5" style="border-color: var(--border-strong);">
             <div class="flex items-center gap-2">
-              <input id="hero-prompt-input" type="text" onkeydown="if(event.key==='Enter') submitHeroPrompt()" class="flex-1 bg-slate-950/90 border border-slate-800 focus:border-sky-400 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none select-text" placeholder="Or type any physics concept (e.g. 'show box moving down a ramp', 'mass on a spring Hooke's law', 'elastic collision', 'Snell's law refraction')..." />
-              <button onclick="submitHeroPrompt()" class="px-4 py-2.5 rounded-xl bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white font-bold text-xs shadow-lg shadow-sky-500/25 shrink-0 transition">
-                🔬 Verify & Model 3D
+              <input id="hero-prompt-input" type="text" onkeydown="if(event.key==='Enter') submitHeroPrompt()" class="flex-1 bg-transparent px-3 py-2 text-xs text-theme-primary focus:outline-none select-text placeholder-[#86868B]" placeholder="Try: 'box sliding down an inclined ramp', 'mass on a spring', 'elastic collision', 'Snell's law refraction'..." />
+              <button onclick="submitHeroPrompt()" class="px-4 py-2 rounded-xl btn-accent font-medium text-xs shrink-0 shadow-sm">
+                Generate 3D Lab
               </button>
             </div>
-            <div class="mt-2 text-[11px] text-slate-400 text-left px-1">
-              <span class="text-sky-300 font-semibold">Universal Coverage:</span> Inclined Planes & Free-Body Diagrams • Springs & SHM • Momentum Collisions • Rotational Torque • Snell's Law Optics • Ideal Gas Piston • Magnetic Flux • Lorentz Spiral • Kepler Orbits • Custom Vector Fields
-            </div>
           </div>
 
+          <!-- Quick-Pick Universal Concept Chips -->
+          <div class="flex flex-wrap items-center justify-center gap-1.5 mb-5">
+            <button onclick="quickLaunchConcept('Show a box sliding down an inclined plane ramp with 3D free-body diagram vectors')" class="px-3 py-1 rounded-full theme-pill text-[11px]">Inclined Plane & FBD</button>
+            <button onclick="quickLaunchConcept('Explain a mass on a spring Hooke law simple harmonic oscillator')" class="px-3 py-1 rounded-full theme-pill text-[11px]">Spring & Hooke's Law</button>
+            <button onclick="quickLaunchConcept('Show elastic and inelastic collisions with conservation of momentum')" class="px-3 py-1 rounded-full theme-pill text-[11px]">Momentum Collisions</button>
+            <button onclick="quickLaunchConcept('Explain magnetic flux and Faraday law of induction with a rotating coil')" class="px-3 py-1 rounded-full theme-pill text-[11px]">Faraday Magnetic Flux</button>
+            <button onclick="quickLaunchConcept('Demonstrate Snell law laser refraction and total internal reflection')" class="px-3 py-1 rounded-full theme-pill text-[11px]">Snell's Law Optics</button>
+            <button onclick="quickLaunchConcept('Show ideal gas molecules in a piston cylinder')" class="px-3 py-1 rounded-full theme-pill text-[11px]">Ideal Gas Piston</button>
+          </div>
+
+          <button onclick="hideVoiceHeroLaunchpad()" class="text-xs text-theme-secondary hover:text-accent transition">
+            Return to Active 3D Viewport &rarr;
+          </button>
         </div>
       </div>
 
-      <!-- 2-PHASE LOADING OVERLAY: STEP 1 (PHYSICS ACCURACY CHECK) -> STEP 2 (3D MODELING) -->
-      <div id="loading-overlay" class="hidden absolute inset-0 z-30 bg-slate-950/90 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center">
-        <div class="max-w-lg w-full bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-2xl">
-          <div class="w-14 h-14 mx-auto rounded-2xl bg-sky-500/15 border border-sky-400/40 flex items-center justify-center text-2xl animate-pulse mb-3">
-            ⚛
-          </div>
-          <h3 id="loading-title" class="text-base font-extrabold text-white mb-1">Verifying Physics Accuracy & Modeling 3D Scene...</h3>
-          <p id="loading-spoken-quote" class="text-xs text-sky-300 italic mb-4"></p>
-
-          <div class="space-y-2.5 text-left mb-4">
-            <div id="stage-box-1" class="p-3 rounded-xl bg-emerald-950/40 border border-emerald-500/40 flex items-start gap-2.5">
-              <span id="stage-icon-1" class="text-sm mt-0.5">🔬</span>
-              <div>
-                <div class="text-xs font-bold text-emerald-300">Step 1: Pre-Modeling Physics Accuracy Check (gemini-4-argon high)</div>
-                <div id="stage-desc-1" class="text-[11px] text-slate-300 mono mt-0.5">Validating governing equations, conservation invariants & vector directions...</div>
-              </div>
-            </div>
-
-            <div id="stage-box-2" class="p-3 rounded-xl bg-slate-950/70 border border-slate-800 flex items-start gap-2.5 opacity-60 transition-opacity">
-              <span id="stage-icon-2" class="text-sm mt-0.5">🧊</span>
-              <div>
-                <div class="text-xs font-bold text-sky-300">Step 2: 3D Symplectic Modeling & AST Verification (gemini-4-argon medium)</div>
-                <div id="stage-desc-2" class="text-[11px] text-slate-400 mono mt-0.5">Synthesizing Three.js scene, interactive sliders, 3D vector arrows & concept explanation...</div>
-              </div>
-            </div>
-          </div>
-
-          <div class="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
-            <div id="loading-bar" class="h-full bg-gradient-to-r from-emerald-400 via-sky-400 to-indigo-500 transition-all duration-300" style="width: 35%"></div>
-          </div>
+      <!-- Clean Loading Overlay during Gemini 4 Argon Synthesis -->
+      <div id="loading-overlay" class="hidden absolute inset-0 z-30 apple-glass flex flex-col items-center justify-center p-8 text-center">
+        <div class="w-12 h-12 rounded-2xl theme-accent-card flex items-center justify-center mb-4">
+          <div class="w-3 h-3 rounded-full bg-[#1890FF] animate-ping"></div>
+        </div>
+        <h3 id="loading-title" class="text-xl font-semibold text-theme-primary tracking-tight mb-1">Building 3D Physics Simulation</h3>
+        <p id="loading-spoken-quote" class="text-xs text-accent italic mb-2"></p>
+        <p id="loading-step" class="text-xs text-theme-secondary mb-5">Step 1: Verifying governing equations & conservation invariants (Gemini 4 Argon)...</p>
+        <div class="w-64 h-1.5 rounded-full theme-pill overflow-hidden">
+          <div id="loading-bar" class="h-full bg-[#1890FF] rounded-full transition-all duration-300" style="width: 30%"></div>
         </div>
       </div>
 
       <!-- Sandboxed 3D WebGL / Three.js Iframe -->
       <iframe id="sim-iframe" class="w-full flex-1 border-0" sandbox="allow-scripts allow-same-origin"></iframe>
 
-      <!-- ON-CANVAS INTERACTIVE CONCEPT EXPLANATION & FREE-BODY / VECTOR BREAKDOWN HUD -->
-      <div id="concept-explanation-hud" class="hidden absolute bottom-11 left-3.5 right-3.5 z-10 bg-slate-950/90 backdrop-blur-xl border border-sky-500/35 rounded-2xl p-3.5 shadow-2xl transition-all">
-        <div class="flex items-start justify-between gap-3">
+      <!-- ON-CANVAS INTERACTIVE CONCEPT EXPLANATION HUD (Dismissible Frosted Sheet) -->
+      <div id="concept-explanation-hud" class="hidden absolute bottom-16 left-5 right-5 z-10 apple-glass rounded-2xl border p-4 shadow-2xl transition-all" style="border-color: var(--border-strong);">
+        <div class="flex items-start justify-between gap-4">
           <div class="flex-1 min-w-0">
             <div class="flex flex-wrap items-center gap-2 mb-1">
-              <span class="px-2 py-0.5 rounded-md bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-[10px] font-bold uppercase">✓ Verified 3D Concept Explanation</span>
-              <h4 id="hud-exp-title" class="text-xs sm:text-sm font-extrabold text-white truncate">Interactive 3D Physics Concept</h4>
-              <span id="hud-exp-law" class="text-[11px] mono px-2 py-0.5 rounded bg-sky-500/15 border border-sky-500/30 text-sky-300 font-semibold"></span>
+              <span class="px-2 py-0.5 rounded-full bg-[#1890FF]/15 text-accent text-[10px] font-semibold">3D Concept Breakdown</span>
+              <h4 id="hud-exp-title" class="text-xs sm:text-sm font-semibold text-theme-primary truncate">Interactive 3D Physics Concept</h4>
+              <span id="hud-exp-law" class="inline-math text-[11px] px-2 py-0.5 rounded-full theme-pill text-theme-body"></span>
             </div>
-            <p id="hud-exp-body" class="text-xs text-slate-200 leading-relaxed mb-2"></p>
-            <div class="flex flex-wrap items-center gap-1.5">
-              <span class="text-[10px] uppercase tracking-wider text-slate-400 font-bold mr-1">3D Vectors & Equations:</span>
-              <div id="hud-exp-chips" class="flex flex-wrap gap-1.5"></div>
-            </div>
+            <p id="hud-exp-body" class="inline-math text-xs text-theme-body leading-relaxed mb-2"></p>
+            <div id="hud-exp-chips" class="flex flex-wrap gap-1.5"></div>
           </div>
-          <div class="flex items-center gap-1.5 shrink-0">
-            <button onclick="playTeacherNarration()" class="px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 text-xs font-bold flex items-center gap-1.5 transition">
-              <span>🔊</span>
-              <span>Explain Aloud</span>
-            </button>
-            <button onclick="toggleExplanationHud()" class="px-2 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-400 hover:text-white text-xs transition" title="Minimize Explanation Overlay">
-              ✕
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <!-- BOTTOM ORCHESTRATION TRACE & CODE DRAWER BAR -->
-      <div class="h-9 border-t border-slate-800 bg-slate-950 px-4 flex items-center justify-between text-[11px] mono text-slate-400 shrink-0 z-20">
-        <div class="flex items-center gap-4">
-          <span id="trace-summary" class="text-slate-300">🟢 Pipeline: <strong class="text-emerald-400">1. Argon High (Physics Audit)</strong> → <strong class="text-sky-400">2. Argon Medium (3D Model)</strong></span>
-          <span id="iframe-objects">Scene Meshes: --</span>
-        </div>
-        <div class="flex items-center gap-2">
-          <button onclick="toggleExplanationHud(true)" class="px-2.5 py-1 rounded bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/30 text-sky-300 transition">
-            📖 Concept Explanation HUD
-          </button>
-          <button onclick="toggleCodeDrawer()" class="px-2.5 py-1 rounded bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 transition">
-            { } View Generated Three.js & API Trace
+          <button onclick="toggleExplanationHud()" class="w-7 h-7 rounded-full theme-pill text-xs flex items-center justify-center shrink-0" title="Close Explanation">
+            &times;
           </button>
         </div>
       </div>
 
-      <!-- Slide-up Code & Interactions API Trace Drawer -->
-      <div id="code-drawer" class="hidden absolute bottom-9 inset-x-0 h-80 bg-slate-950/95 backdrop-blur-xl border-t border-slate-700 z-20 p-4 flex gap-4">
-        <div class="w-1/3 flex flex-col">
-          <div class="text-xs font-bold text-sky-400 mb-2">🔗 Interactions API Multi-Model Choreography Trace</div>
-          <div id="trace-list" class="flex-1 bg-slate-900 border border-slate-800 rounded-xl p-3 overflow-y-auto space-y-2 text-xs mono">
-            <div class="text-slate-400">Speak a concept or click an example to inspect the Step 1 Physics Accuracy Audit and Step 2 3D Modeling trace.</div>
+      <!-- Subtle Floating Pill Bar in Bottom-Right for Explanation HUD & Three.js Source -->
+      <div class="absolute bottom-4 right-5 z-10 flex items-center gap-2">
+        <button onclick="toggleExplanationHud()" class="apple-glass px-3.5 py-1.5 rounded-full border text-xs text-theme-body hover:opacity-95 shadow-lg flex items-center gap-1.5 transition" style="border-color: var(--border-strong);">
+          <span class="text-accent font-semibold">i</span>
+          <span>Concept Overlay</span>
+        </button>
+        <button onclick="toggleCodeDrawer()" class="apple-glass px-3.5 py-1.5 rounded-full border text-xs text-theme-body hover:opacity-95 shadow-lg flex items-center gap-2 transition" style="border-color: var(--border-strong);">
+          <span class="w-1.5 h-1.5 rounded-full bg-[#1890FF]"></span>
+          <span id="trace-summary">Gemini 4 Argon · Code & Trace</span>
+          <span id="iframe-objects" class="text-theme-secondary text-[11px] hidden sm:inline"></span>
+        </button>
+      </div>
+
+      <!-- Slide-up AI Engine & Three.js Source Sheet (Hidden by Default) -->
+      <div id="code-drawer" class="hidden absolute inset-x-4 bottom-4 h-80 rounded-2xl apple-glass border shadow-2xl z-20 grid grid-cols-3 divide-x overflow-hidden" style="border-color: var(--border-strong);">
+        <div class="p-4 flex flex-col overflow-hidden" style="border-color: var(--border-subtle);">
+          <div class="flex items-center justify-between mb-2.5">
+            <span class="text-xs font-semibold text-theme-primary">Gemini Model Pipeline</span>
+            <span id="arch-stateful-id" class="text-[11px] text-accent mono">Implicit Cache · 95%</span>
+          </div>
+          <div id="trace-list" class="flex-1 rounded-xl theme-eq-box p-3 overflow-y-auto space-y-2 text-xs">
+            <div class="text-theme-secondary leading-relaxed">
+              <strong>1. Guardrail:</strong> <code class="text-theme-primary">gemini-3.5-flash-lite</code><br>
+              <strong>2. Physics Audit:</strong> <code class="text-accent">gemini-4-argon (high)</code><br>
+              <strong>3. 3D Solver:</strong> <code class="text-accent">gemini-4-argon (medium)</code><br>
+              <strong>4. Curriculum:</strong> <code class="text-theme-primary">gemini-3.8-flash</code><br>
+              <strong>5. Narration:</strong> <code class="text-theme-primary">gemini-3.8-flash-tts</code>
+            </div>
           </div>
         </div>
-        <div class="flex-1 flex flex-col">
-          <div class="flex items-center justify-between mb-2">
-            <span class="text-xs font-bold text-emerald-400">📄 Standalone HTML5 + Three.js Simulation Source</span>
-            <button onclick="toggleCodeDrawer()" class="text-xs text-slate-400 hover:text-white">✕ Close</button>
+        <div class="col-span-2 p-4 flex flex-col overflow-hidden" style="border-color: var(--border-subtle);">
+          <div class="flex items-center justify-between mb-2.5">
+            <span class="text-xs font-semibold text-theme-primary">Standalone Three.js Source Code</span>
+            <button onclick="toggleCodeDrawer()" class="px-2.5 py-0.5 rounded-full theme-pill text-xs">Done</button>
           </div>
-          <textarea id="code-viewer" readonly class="flex-1 w-full bg-slate-900 border border-slate-800 rounded-xl p-3 text-[11px] mono text-slate-300 resize-none focus:outline-none select-text"></textarea>
+          <textarea id="code-viewer" readonly class="flex-1 w-full rounded-xl theme-eq-box p-3 text-[11px] mono text-theme-body resize-none focus:outline-none select-text"></textarea>
         </div>
       </div>
 
     </main>
   </div>
 
-  <!-- MODAL 1: HUMAN-IN-THE-LOOP GOOGLE CLASSROOM APPROVAL GATE (Judge Test #3) -->
-  <div id="publish-modal" class="hidden fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-    <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-lg w-full p-5 shadow-2xl">
+  <!-- MODAL 1: GOOGLE CLASSROOM ASSIGNMENT APPROVAL -->
+  <div id="publish-modal" class="hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-xl flex items-center justify-center p-4">
+    <div class="rounded-3xl max-w-md w-full p-6 shadow-2xl border" style="background-color: var(--bg-modal); border-color: var(--border-strong);">
       <div class="flex items-center justify-between mb-3">
-        <div class="flex items-center gap-2">
-          <span class="px-2 py-0.5 rounded bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[10px] font-bold uppercase">Human-in-the-Loop Gate</span>
-          <h3 class="text-base font-bold text-white">Approve Google Classroom Assignment</h3>
-        </div>
-        <button onclick="closePublishModal()" class="text-slate-400 hover:text-white text-sm">✕</button>
+        <h3 class="text-lg font-semibold text-theme-primary">Assign 3D Lab to Classroom</h3>
+        <button onclick="closePublishModal()" class="w-7 h-7 rounded-full theme-pill text-sm flex items-center justify-center">&times;</button>
       </div>
 
-      <p class="text-xs text-slate-300 mb-3 leading-relaxed">
-        Before PhysiCraft pushes this interactive 3D simulation and discussion prompts to an external system (<span class="mono text-sky-300">Google Classroom Roster</span>), review the privacy audit and confirm publication:
+      <p class="text-xs text-theme-secondary mb-4 leading-relaxed">
+        Review the automated FERPA & student privacy check before publishing this 3D simulation to your class roster.
       </p>
 
-      <div id="publish-details" class="bg-slate-950 border border-slate-800 rounded-xl p-3.5 space-y-2 text-xs mb-4">
-        <div class="flex justify-between"><span class="text-slate-400">Target External System:</span><span class="mono text-slate-200">Google Classroom API</span></div>
-        <div class="flex justify-between"><span class="text-slate-400">Course Roster:</span><span class="font-semibold text-white">AP Physics C — Period 3 (28 Students)</span></div>
-        <div class="flex justify-between"><span class="text-slate-400">Lab Title:</span><span id="pub-title" class="text-sky-300 font-semibold"></span></div>
-        <div class="flex justify-between"><span class="text-slate-400">3D Simulation Bundle:</span><span id="pub-size" class="mono text-slate-300"></span></div>
-        <div class="pt-2 border-t border-slate-800">
-          <div class="text-[11px] font-bold text-emerald-400 flex items-center gap-1">
-            <span>🛡️ FERPA & Student PII Guardrail (Subagent 3):</span>
-          </div>
-          <p id="pub-audit" class="text-[11px] text-slate-300 mt-0.5 mono">Running privacy scan...</p>
+      <div id="publish-details" class="rounded-2xl theme-card p-4 space-y-2.5 text-xs mb-4">
+        <div class="flex justify-between"><span class="text-theme-secondary">Destination</span><span class="text-theme-primary font-medium">Google Classroom</span></div>
+        <div class="flex justify-between"><span class="text-theme-secondary">Class Roster</span><span class="text-theme-primary font-medium">AP Physics C · Period 3 (28 Students)</span></div>
+        <div class="flex justify-between"><span class="text-theme-secondary">Simulation</span><span id="pub-title" class="text-accent font-medium"></span></div>
+        <div class="flex justify-between"><span class="text-theme-secondary">Bundle Size</span><span id="pub-size" class="text-theme-primary mono text-[11px]"></span></div>
+        <div class="pt-2.5 border-t" style="border-color: var(--border-subtle);">
+          <div class="text-[11px] font-medium text-theme-secondary">Privacy Check (gemini-3.5-flash-lite)</div>
+          <p id="pub-audit" class="text-xs text-[#30D158] mt-0.5">Scanning payload...</p>
         </div>
       </div>
 
-      <div id="publish-result" class="hidden mb-4 p-3 rounded-xl bg-emerald-950/70 border border-emerald-500/40 text-emerald-200 text-xs"></div>
+      <div id="publish-result" class="hidden mb-4 p-3 rounded-xl bg-[#30D158]/15 border border-[#30D158]/30 text-theme-primary text-xs"></div>
 
-      <div class="flex items-center justify-end gap-2">
-        <button onclick="confirmPublish(false)" class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold">
-          Cancel (Keep Draft)
+      <div class="flex items-center justify-end gap-2.5">
+        <button onclick="confirmPublish(false)" class="px-4 py-2 rounded-full theme-pill text-xs font-medium">
+          Cancel
         </button>
-        <button id="btn-confirm-pub" onclick="confirmPublish(true)" class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-lg shadow-emerald-600/25">
-          ✓ Teacher Approve & Publish to 28 Students
+        <button id="btn-confirm-pub" onclick="confirmPublish(true)" class="px-4 py-2 rounded-full btn-accent text-xs font-medium">
+          Publish to 28 Students
         </button>
       </div>
     </div>
   </div>
 
-  <!-- MODAL 2: GEMINI API KEY CONFIGURATION -->
-  <div id="key-modal" class="hidden fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-    <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-md w-full p-5 shadow-2xl">
+  <!-- MODAL 2: GEMINI API KEY -->
+  <div id="key-modal" class="hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-xl flex items-center justify-center p-4">
+    <div class="rounded-3xl max-w-md w-full p-6 shadow-2xl border" style="background-color: var(--bg-modal); border-color: var(--border-strong);">
       <div class="flex items-center justify-between mb-2">
-        <h3 class="text-base font-bold text-white">🔑 Configure Gemini API Key</h3>
-        <button onclick="closeKeyModal()" class="text-slate-400 hover:text-white text-sm">✕</button>
+        <h3 class="text-lg font-semibold text-theme-primary">Gemini API Key</h3>
+        <button onclick="closeKeyModal()" class="w-7 h-7 rounded-full theme-pill text-sm flex items-center justify-center">&times;</button>
       </div>
-      <p class="text-xs text-slate-300 mb-3 leading-relaxed">
-        Paste your hackathon <code class="text-sky-300">GEMINI_API_KEY</code> to unlock live <code class="text-sky-300">gemini-4-argon</code> Physics Accuracy Auditing (<code class="text-emerald-300">thinking_level="high"</code>) and 3D scene synthesis (<code class="text-sky-300">thinking_level="medium"</code>).
+      <p class="text-xs text-theme-secondary mb-4 leading-relaxed">
+        Enter your <code class="text-theme-primary">GEMINI_API_KEY</code> to enable live <code class="text-accent">gemini-4-argon</code> 3D scene generation and voice narration.
       </p>
-      <input id="api-key-input" type="password" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs mono text-white mb-3 focus:border-sky-400 focus:outline-none select-text" placeholder="AIzaSy..." />
+      <input id="api-key-input" type="password" class="w-full rounded-xl theme-eq-box px-3.5 py-2.5 text-xs mono text-theme-primary mb-4 focus:border-[#1890FF] focus:outline-none select-text" placeholder="AIzaSy..." />
       <div class="flex justify-end gap-2">
-        <button onclick="closeKeyModal()" class="px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 text-xs">Close</button>
-        <button onclick="saveApiKey()" class="px-4 py-1.5 rounded-lg bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs">Save Key</button>
+        <button onclick="closeKeyModal()" class="px-4 py-2 rounded-full theme-pill text-xs font-medium">Cancel</button>
+        <button onclick="saveApiKey()" class="px-4 py-2 rounded-full btn-accent font-medium text-xs">Save Key</button>
       </div>
     </div>
   </div>
 
   <script>
+    let presetsData = {};
+    let currentPresetId = 'lorentz';
     let currentHtml = '';
     let currentCurriculum = null;
     let currentInteractionId = null;
     let currentApprovalId = null;
     let isRecording = false;
     let recognition = null;
+    let viewMode = 'teacher';
+    let teacherNotesRevealedInStudentMode = false;
+    let discussedQuestions = {};
+    let lastPhysicsAudit = null;
+    let currentTheme = localStorage.getItem('physicraft_theme') || 'dark';
 
-    async function initApp() {
-      const statusRes = await fetch('/api/status').then(r => r.json());
-      updateKeyBadge(statusRes.api_key_configured, statusRes.api_key_preview);
-      // Do NOT auto-load any preset! Start on the Voice-to-3D Hero Launchpad.
-      showVoiceHeroLaunchpad();
+    const PRESET_META = {
+      lorentz: { shortTitle: 'Lorentz Force' },
+      kepler: { shortTitle: 'Kepler Orbits' },
+      pendulum: { shortTitle: 'Double Pendulum' },
+      waves: { shortTitle: 'Wave Interference' }
+    };
+
+    function applyTheme(theme) {
+      currentTheme = theme === 'light' ? 'light' : 'dark';
+      localStorage.setItem('physicraft_theme', currentTheme);
+
+      const sunIcon = document.getElementById('theme-icon-sun');
+      const moonIcon = document.getElementById('theme-icon-moon');
+      const themeLabel = document.getElementById('theme-label');
+
+      if (currentTheme === 'light') {
+        document.body.classList.add('light');
+        document.documentElement.classList.remove('dark');
+        if (sunIcon) sunIcon.classList.add('hidden');
+        if (moonIcon) moonIcon.classList.remove('hidden');
+        if (themeLabel) themeLabel.textContent = 'Dark';
+      } else {
+        document.body.classList.remove('light');
+        document.documentElement.classList.add('dark');
+        if (sunIcon) sunIcon.classList.remove('hidden');
+        if (moonIcon) moonIcon.classList.add('hidden');
+        if (themeLabel) themeLabel.textContent = 'Light';
+      }
+
+      syncIframeTheme();
     }
 
-    function cleanMathText(str) {
-      if (!str) return '';
-      return String(str).replace(/\u20d7/g, '');
+    function toggleTheme() {
+      applyTheme(currentTheme === 'light' ? 'dark' : 'light');
+    }
+
+    function syncIframeTheme() {
+      const iframe = document.getElementById('sim-iframe');
+      if (iframe && iframe.contentWindow) {
+        iframe.contentWindow.postMessage({
+          type: 'physicraft_theme',
+          theme: currentTheme
+        }, '*');
+      }
     }
 
     function showVoiceHeroLaunchpad() {
-      document.getElementById('voice-hero-stage').classList.remove('hidden');
+      const el = document.getElementById('voice-hero-stage');
+      if (el) el.classList.remove('hidden');
     }
 
     function hideVoiceHeroLaunchpad() {
-      document.getElementById('voice-hero-stage').classList.add('hidden');
+      const el = document.getElementById('voice-hero-stage');
+      if (el) el.classList.add('hidden');
     }
 
     function submitHeroPrompt() {
       const heroInput = document.getElementById('hero-prompt-input');
       if (!heroInput || !heroInput.value.trim()) return;
       document.getElementById('prompt-input').value = heroInput.value.trim();
+      hideVoiceHeroLaunchpad();
+      generateSimulation(false);
+    }
+
+    function quickLaunchConcept(promptText) {
+      document.getElementById('prompt-input').value = promptText;
+      hideVoiceHeroLaunchpad();
       generateSimulation(false);
     }
 
@@ -448,90 +745,360 @@
       }
     }
 
+    const EXACT_EQUATION_LATEX = {
+      'F = q(E + v × B)': '\\vec{F} = q\\left(\\vec{E} + \\vec{v} \\times \\vec{B}\\right)',
+      'r_c = (m · v_⊥) / (|q| · B)': 'r_c = \\frac{m \\cdot v_{\\perp}}{|q| \\cdot B}',
+      'ω_c = (|q| · B) / m': '\\omega_c = \\frac{|q| \\cdot B}{m}',
+      'F_g = -(G · M · m / r²) r̂': '\\vec{F}_g = -\\frac{G M m}{r^2}\\,\\hat{r}',
+      'dA / dt = L / (2m) = constant': '\\frac{dA}{dt} = \\frac{L}{2m} = \\text{const}',
+      'E_total = ½mv² - GMm / r': 'E_{\\text{total}} = \\tfrac{1}{2}mv^2 - \\frac{GMm}{r}',
+      'L = T - V (Euler-Lagrange Coupled ODEs)': '\\mathcal{L} = T - V \\quad \\text{(Euler–Lagrange)}',
+      'Δθ(t) ≈ Δθ(0) · e^(λt)  (Lyapunov Exponent λ > 0)': '\\Delta\\theta(t) \\approx \\Delta\\theta_0 \\, e^{\\lambda t} \\quad (\\lambda > 0)',
+      'E_total = T₁ + T₂ + V₁ + V₂ = constant': 'E_{\\text{total}} = T_1 + T_2 + V_1 + V_2 = \\text{const}',
+      'Δr = |r₁ - r₂| = d · sin(θ)': '\\Delta r = |r_1 - r_2| = d \\sin\\theta',
+      'Constructive: Δr = m · λ': '\\text{Constructive: } \\Delta r = m\\lambda',
+      'Destructive (Nodal): Δr = (m + ½) · λ': '\\text{Destructive: } \\Delta r = \\left(m + \\tfrac{1}{2}\\right)\\lambda'
+    };
+
+    function convertPhysicsStringToLatex(raw) {
+      let cleanRaw = String(raw || '').replace(/[\u20d7\u20d6]/g, '').trim();
+      if (EXACT_EQUATION_LATEX[cleanRaw]) return EXACT_EQUATION_LATEX[cleanRaw];
+      let s = cleanRaw;
+      if (s.startsWith('$') && s.endsWith('$') && s.length > 2) {
+        return s.slice(1, -1).trim();
+      }
+      if (/\\(vec|frac|tfrac|hat|Delta|omega|lambda|theta|phi|perp|parallel|mathcal|text|left|right)/.test(s)) {
+        return s;
+      }
+      s = s.replace(/([A-Za-z])\u0302/g, '\\hat{$1}');
+      s = s.replace(/_([a-zA-Z0-9]{2,})/g, '_{\\text{$1}}');
+      s = s.replace(/_⊥/g, '_{\\perp}');
+      s = s.replace(/_∥/g, '_{\\parallel}');
+      s = s.replace(/₀/g, '_0').replace(/₁/g, '_1').replace(/₂/g, '_2').replace(/₃/g, '_3');
+      s = s.replace(/²/g, '^2').replace(/³/g, '^3');
+      s = s.replace(/½/g, '\\tfrac{1}{2}');
+      s = s.replace(/×/g, '\\times ').replace(/·/g, '\\cdot ').replace(/⊥/g, '\\perp ').replace(/∥/g, '\\parallel ');
+      s = s.replace(/Δ/g, '\\Delta ').replace(/ω/g, '\\omega ').replace(/λ/g, '\\lambda ').replace(/Φ/g, '\\Phi ');
+      s = s.replace(/θ/g, '\\theta ').replace(/φ/g, '\\phi ').replace(/π/g, '\\pi ').replace(/τ/g, '\\tau ').replace(/μ/g, '\\mu ').replace(/≈/g, '\\approx ');
+      return s;
+    }
+
+    function renderKatexSafe(latex, displayMode = false) {
+      if (window.katex) {
+        try {
+          return window.katex.renderToString(latex, {
+            throwOnError: false,
+            displayMode: displayMode
+          });
+        } catch (e) {
+          return `<code>${latex}</code>`;
+        }
+      }
+      return `<code>${latex}</code>`;
+    }
+
+    function formatPhysicsMath(text) {
+      if (!text) return '';
+      const rawStr = String(text).replace(/[\u20d7\u20d6]/g, '');
+      const segments = rawStr.split(/(\$[^$]+\$)/g);
+      return segments.map(segment => {
+        if (segment.startsWith('$') && segment.endsWith('$') && segment.length > 2) {
+          return renderKatexSafe(segment.slice(1, -1), false);
+        }
+
+        let s = segment
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;');
+
+        const phraseReplacements = [
+          [/\bF\s*⊥\s*v\b/g, '\\vec{F} \\perp \\vec{v}'],
+          [/r\s*=\s*mv\/qB/g, 'r = \\frac{mv}{qB}'],
+          [/v\s*=\s*fλ/g, 'v = f\\lambda'],
+          [/Δr\s*=\s*\(m\s*\+\s*1\/2\)λ/g, '\\Delta r = (m + \\tfrac{1}{2})\\lambda'],
+          [/v_y\s*=\s*0/g, 'v_y = 0'],
+          [/θ₁\s*=\s*135°/g, '\\theta_1 = 135^\\circ'],
+          [/θ\s*=\s*0°/g, '\\theta = 0^\\circ'],
+          [/d\s*\/\s*λ/g, 'd / \\lambda']
+        ];
+        phraseReplacements.forEach(([regex, latex]) => {
+          s = s.replace(regex, () => renderKatexSafe(latex, false));
+        });
+
+        s = s.replace(/\b([A-Za-zωθλφΔΦμτ]+)_([a-zA-Z0-9⊥∥]+)\b/g, (_, base, sub) => {
+          const b = convertPhysicsStringToLatex(base);
+          const sb = sub === '⊥' ? '\\perp' : (sub === '∥' ? '\\parallel' : (sub.length > 1 ? `\\text{${sub}}` : sub));
+          return renderKatexSafe(`${b}_{${sb}}`, false);
+        });
+
+        s = s.replace(/([A-Za-zθωλΦ])([₀₁₂₃])/g, (_, base, sub) => {
+          const b = convertPhysicsStringToLatex(base);
+          const map = { '₀': '0', '₁': '1', '₂': '2', '₃': '3' };
+          return renderKatexSafe(`${b}_${map[sub]}`, false);
+        });
+
+        s = s.replace(/Δφ/g, () => renderKatexSafe('\\Delta\\phi', false));
+        s = s.replace(/Δr/g, () => renderKatexSafe('\\Delta r', false));
+        s = s.replace(/Δt/g, () => renderKatexSafe('\\Delta t', false));
+        s = s.replace(/Δθ/g, () => renderKatexSafe('\\Delta\\theta', false));
+        s = s.replace(/\(\+q\)/g, () => renderKatexSafe('(+q)', false));
+        s = s.replace(/\(-q\)/g, () => renderKatexSafe('(-q)', false));
+
+        return s;
+      }).join('');
+    }
+
+    async function initApp() {
+      applyTheme(currentTheme);
+      const [statusRes, presetsRes] = await Promise.all([
+        fetch('/api/status').then(r => r.json()),
+        fetch('/api/presets').then(r => r.json())
+      ]);
+      updateKeyBadge(statusRes.api_key_configured, statusRes.api_key_preview);
+      presetsData = presetsRes.presets || {};
+      renderPresetButtons();
+      loadPreset('lorentz');
+    }
+
+    function renderPresetButtons() {
+      const grid = document.getElementById('presets-grid');
+      const ids = Object.keys(presetsData);
+      if (!grid || ids.length === 0) return;
+
+      grid.innerHTML = ids.map((id) => {
+        const p = presetsData[id];
+        const meta = PRESET_META[id] || {
+          shortTitle: (p.title || id).split(':')[0]
+        };
+        return `
+          <button onclick="loadPreset('${id}')" id="preset-${id}" class="preset-pill px-3.5 py-1 rounded-full text-xs">
+            ${meta.shortTitle}
+          </button>
+        `;
+      }).join('');
+    }
+
+    function setViewMode(mode) {
+      viewMode = mode;
+      teacherNotesRevealedInStudentMode = false;
+      const teacherBtn = document.getElementById('mode-teacher-btn');
+      const studentBtn = document.getElementById('mode-student-btn');
+
+      if (mode === 'student') {
+        studentBtn.className = 'mode-btn-active px-3 py-1 rounded-full text-xs font-medium transition';
+        teacherBtn.className = 'px-3 py-1 rounded-full text-xs font-medium transition text-theme-secondary hover:opacity-90';
+      } else {
+        teacherBtn.className = 'mode-btn-active px-3 py-1 rounded-full text-xs font-medium transition';
+        studentBtn.className = 'px-3 py-1 rounded-full text-xs font-medium transition text-theme-secondary hover:opacity-90';
+      }
+      updateTeacherNotesVisibility();
+    }
+
+    function toggleTeacherNotesReveal() {
+      teacherNotesRevealedInStudentMode = !teacherNotesRevealedInStudentMode;
+      updateTeacherNotesVisibility();
+    }
+
+    function updateTeacherNotesVisibility() {
+      const mask = document.getElementById('student-mode-mask');
+      const content = document.getElementById('teacher-notes-content');
+      if (!mask || !content) return;
+
+      if (viewMode === 'student' && !teacherNotesRevealedInStudentMode) {
+        mask.classList.remove('hidden');
+        content.classList.add('hidden');
+      } else {
+        mask.classList.add('hidden');
+        content.classList.remove('hidden');
+      }
+    }
+
+    function switchInspectorTab(tabId) {
+      ['lesson', 'questions'].forEach(t => {
+        const btn = document.getElementById('tab-btn-' + t);
+        const panel = document.getElementById('tab-panel-' + t);
+        if (btn && panel) {
+          if (t === tabId) {
+            btn.classList.add('active');
+            panel.classList.remove('hidden');
+          } else {
+            btn.classList.remove('active');
+            panel.classList.add('hidden');
+          }
+        }
+      });
+    }
+
     function updateKeyBadge(configured, preview) {
       const dot = document.getElementById('key-dot');
       const label = document.getElementById('key-label');
       if (configured) {
-        dot.className = 'w-2 h-2 rounded-full bg-emerald-400';
+        dot.className = 'w-1.5 h-1.5 rounded-full bg-[#30D158]';
         label.textContent = preview || 'Key Ready';
       } else {
-        dot.className = 'w-2 h-2 rounded-full bg-amber-400 animate-pulse';
-        label.textContent = 'Set API Key';
+        dot.className = 'w-1.5 h-1.5 rounded-full bg-[#1890FF]';
+        label.textContent = 'API Key';
       }
     }
-
-    let lastPhysicsAudit = null;
 
     function renderPhysicsAccuracyAudit(audit) {
       if (!audit) return;
       lastPhysicsAudit = audit;
-      document.getElementById('audit-badge').textContent = audit.physically_accurate ? '✓ Physics Verified' : '⚠️ Corrected';
-      document.getElementById('audit-law').textContent = cleanMathText(audit.verified_law || 'Verified Governing Equations');
+      const badge = document.getElementById('audit-badge');
+      const law = document.getElementById('audit-law');
       const details = document.getElementById('audit-details');
-      details.classList.remove('hidden');
-      document.getElementById('audit-invariant').textContent = cleanMathText((audit.conservation_invariants || []).join(' • '));
-      document.getElementById('audit-solver').textContent = cleanMathText(audit.required_solver || 'Symplectic Integrator');
-      document.getElementById('audit-vectors').textContent = cleanMathText((audit.vector_visualizers || []).join(', '));
+      if (badge) badge.textContent = audit.physically_accurate ? 'Verified' : 'Corrected';
+      if (law) law.innerHTML = formatPhysicsMath(audit.verified_law || 'Verified Governing Equations');
+      if (details) {
+        details.classList.remove('hidden');
+        document.getElementById('audit-invariant').innerHTML = formatPhysicsMath((audit.conservation_invariants || []).join(' · '));
+        document.getElementById('audit-solver').textContent = audit.required_solver || 'Symplectic Integrator';
+        document.getElementById('audit-vectors').innerHTML = formatPhysicsMath((audit.vector_visualizers || []).join(', '));
+      }
+    }
+
+    function loadPreset(id) {
+      const p = presetsData[id];
+      if (!p) return;
+      hideVoiceHeroLaunchpad();
+      currentPresetId = id;
+      currentHtml = p.html;
+      currentCurriculum = p.curriculum;
+      currentInteractionId = null;
+      discussedQuestions = {};
+
+      document.getElementById('session-badge').textContent = 'Interactive Lab';
+
+      document.querySelectorAll('.preset-pill').forEach(btn => {
+        btn.classList.remove('active-preset');
+      });
+      const activeBtn = document.getElementById('preset-' + id);
+      if (activeBtn) {
+        activeBtn.classList.add('active-preset');
+      }
+
+      document.getElementById('prompt-input').value = '';
+      document.getElementById('prompt-input').placeholder = `Ask Gemini to customize "${p.title}" or describe any new 3D physics concept...`;
+      document.getElementById('cur-subtitle').textContent = p.subtitle || 'AP Physics Interactive Lab';
+      renderCurriculum(p.curriculum);
+      injectSimulationHtml(p.html);
     }
 
     function renderCurriculum(cur, domainOverride) {
       if (!cur) return;
-      document.getElementById('cur-subtitle').textContent = cleanMathText(domainOverride || 'AP Physics Interactive 3D Lab');
-      document.getElementById('cur-title').textContent = cleanMathText(cur.concept || 'Interactive 3D Lab');
-      document.getElementById('cur-guide').textContent = cleanMathText(cur.teacher_guide || '');
-      document.getElementById('cur-misconception').textContent = cleanMathText(cur.misconception_alert || '');
+      if (domainOverride) {
+        document.getElementById('cur-subtitle').textContent = String(domainOverride).replace(/[\u20d7\u20d6]/g, '');
+      }
+      document.getElementById('cur-title').textContent = String(cur.concept || 'Interactive 3D Lab').replace(/[\u20d7\u20d6]/g, '');
+      document.getElementById('cur-guide').innerHTML = formatPhysicsMath(cur.teacher_guide || '');
+      document.getElementById('cur-misconception').innerHTML = formatPhysicsMath(cur.misconception_alert || '');
 
       const eqContainer = document.getElementById('cur-equations');
       eqContainer.innerHTML = '';
       (cur.equations || []).forEach(eq => {
-        const span = document.createElement('span');
-        span.className = 'px-2 py-1 rounded-md bg-slate-900 border border-slate-700/80 text-sky-300';
-        span.textContent = cleanMathText(eq);
-        eqContainer.appendChild(span);
+        const row = document.createElement('div');
+        row.className = 'px-3.5 py-2.5 rounded-xl theme-eq-box overflow-x-auto';
+        const latex = convertPhysicsStringToLatex(eq);
+        row.innerHTML = renderKatexSafe(latex, false);
+        eqContainer.appendChild(row);
       });
+
+      const questions = cur.intuition_questions || [];
+      const countBadge = document.getElementById('questions-count-badge');
+      if (countBadge) countBadge.textContent = questions.length;
 
       const qList = document.getElementById('cur-questions');
       qList.innerHTML = '';
-      (cur.intuition_questions || []).forEach(q => {
+      questions.forEach((q, idx) => {
         const li = document.createElement('li');
-        li.className = 'bg-slate-950/60 border border-slate-800/80 rounded-lg px-2.5 py-1.5 leading-snug';
-        li.textContent = cleanMathText(q);
+        const isDone = !!discussedQuestions[idx];
+        li.className = `p-4 rounded-2xl transition cursor-pointer ${
+          isDone
+            ? 'theme-card opacity-60 text-theme-secondary'
+            : 'theme-card hover:border-[#1890FF]/40 text-theme-primary'
+        }`;
+        li.onclick = () => toggleQuestionDiscussed(idx);
+        li.innerHTML = `
+          <div class="flex items-start gap-3">
+            <span class="w-6 h-6 rounded-full text-xs flex items-center justify-center shrink-0 mt-0.5 font-semibold ${
+              isDone ? 'bg-[#30D158] text-white' : 'bg-[#1890FF]/15 text-accent'
+            }">${isDone ? '✓' : idx + 1}</span>
+            <span class="inline-math leading-relaxed text-[13px] flex-1">${formatPhysicsMath(q)}</span>
+          </div>
+        `;
         qList.appendChild(li);
       });
 
-      // Populate On-Canvas Interactive Concept Explanation HUD
-      const hud = document.getElementById('concept-explanation-hud');
-      if (hud) {
-        hud.classList.remove('hidden');
-        document.getElementById('hud-exp-title').textContent = cleanMathText(cur.concept || '3D Physics Concept');
-        document.getElementById('hud-exp-law').textContent = cleanMathText(lastPhysicsAudit?.verified_law || (cur.equations && cur.equations[0]) || '');
-        const bodyParts = [];
-        if (cur.teacher_guide) bodyParts.push(cleanMathText(cur.teacher_guide));
-        if (cur.misconception_alert) bodyParts.push('Key Insight: ' + cleanMathText(cur.misconception_alert));
-        document.getElementById('hud-exp-body').textContent = bodyParts.join(' ');
-
-        const chips = document.getElementById('hud-exp-chips');
-        chips.innerHTML = '';
+      // Populate On-Canvas Concept Explanation HUD
+      const hudTitle = document.getElementById('hud-exp-title');
+      const hudLaw = document.getElementById('hud-exp-law');
+      const hudBody = document.getElementById('hud-exp-body');
+      const hudChips = document.getElementById('hud-exp-chips');
+      if (hudTitle && hudLaw && hudBody && hudChips) {
+        hudTitle.textContent = String(cur.concept || '3D Physics Concept').replace(/[\u20d7\u20d6]/g, '');
+        const primaryEq = lastPhysicsAudit?.verified_law || (cur.equations && cur.equations[0]) || '';
+        hudLaw.innerHTML = formatPhysicsMath(primaryEq);
+        hudBody.innerHTML = formatPhysicsMath(cur.teacher_guide || '');
+        hudChips.innerHTML = '';
         (cur.equations || []).slice(0, 3).forEach(eq => {
           const c = document.createElement('span');
-          c.className = 'px-2 py-0.5 rounded bg-slate-900 border border-sky-500/30 text-sky-300 mono text-[11px]';
-          c.textContent = cleanMathText(eq);
-          chips.appendChild(c);
-        });
-        (lastPhysicsAudit?.vector_visualizers || []).slice(0, 4).forEach(vec => {
-          const v = document.createElement('span');
-          v.className = 'px-2 py-0.5 rounded bg-indigo-950/70 border border-indigo-500/30 text-indigo-200 text-[11px]';
-          v.textContent = '↗ ' + cleanMathText(vec);
-          chips.appendChild(v);
+          c.className = 'px-2.5 py-1 rounded-lg theme-eq-box text-[11px]';
+          c.innerHTML = renderKatexSafe(convertPhysicsStringToLatex(eq), false);
+          hudChips.appendChild(c);
         });
       }
+
+      updateTeacherNotesVisibility();
+    }
+
+    function toggleQuestionDiscussed(idx) {
+      discussedQuestions[idx] = !discussedQuestions[idx];
+      if (currentCurriculum) renderCurriculum(currentCurriculum);
+    }
+
+    function ensureUniversalIframeThemeSupport(rawHtml) {
+      let cleaned = String(rawHtml || '').replace(/[\u20d7\u20d6]/g, '');
+      if (cleaned.includes('physicraft_theme')) {
+        return cleaned;
+      }
+      const themeBridge = `
+<style>
+  body.light { background: #F2F5F9 !important; color: #1D1D1F !important; }
+  body.light .hud, body.light .legend, body.light .exp-card {
+    background: rgba(255, 255, 255, 0.88) !important;
+    border-color: rgba(15, 23, 42, 0.12) !important;
+    color: #1D1D1F !important;
+    box-shadow: 0 12px 32px rgba(15, 23, 42, 0.10) !important;
+  }
+  body.light h2, body.light .val, body.light strong { color: #0082FB !important; }
+  body.light .sub, body.light label { color: #475569 !important; }
+  body.light .stat { background: rgba(241, 245, 249, 0.95) !important; border-color: rgba(15, 23, 42, 0.08) !important; color: #334155 !important; }
+</style>
+<script>
+  window.addEventListener('message', function(e) {
+    if (e.data && e.data.type === 'physicraft_theme') {
+      const isLight = e.data.theme === 'light';
+      document.body.classList.toggle('light', isLight);
+      try {
+        if (typeof scene !== 'undefined' && scene && typeof THREE !== 'undefined') {
+          scene.background = new THREE.Color(isLight ? 0xF2F5F9 : 0x050507);
+        }
+      } catch (err) {}
+    }
+  });
+<\/script>`;
+      if (cleaned.includes('</body>')) {
+        return cleaned.replace('</body>', themeBridge + '\n</body>');
+      }
+      return cleaned + themeBridge;
     }
 
     function injectSimulationHtml(html) {
-      currentHtml = cleanMathText(html);
-      hideVoiceHeroLaunchpad();
-      document.getElementById('btn-fault-test').classList.remove('hidden');
+      currentHtml = ensureUniversalIframeThemeSupport(html);
       const iframe = document.getElementById('sim-iframe');
+      iframe.onload = () => {
+        syncIframeTheme();
+      };
       iframe.srcdoc = currentHtml;
       document.getElementById('code-viewer').value = currentHtml;
     }
@@ -542,20 +1109,18 @@
       if (!data || typeof data !== 'object') return;
 
       if (data.type === 'physicraft_telemetry') {
-        const badge = document.getElementById('verify-badge');
         const dot = document.getElementById('verify-dot');
         const txt = document.getElementById('verify-text');
-        document.getElementById('iframe-objects').textContent = `Scene Meshes: ${data.objects || '--'}`;
+        const objEl = document.getElementById('iframe-objects');
+        if (objEl && data.objects) objEl.textContent = `· ${data.objects} meshes`;
 
         if (data.hasNaN || data.errors > 0 || !data.energyBounded) {
-          badge.className = 'flex items-center gap-2 px-3 py-1.5 rounded-lg bg-rose-950/80 border border-rose-500/60 text-rose-200 text-xs font-medium';
-          dot.className = 'w-2 h-2 rounded-full bg-rose-400 animate-ping';
-          txt.textContent = `⚠️ Fault Detected (NaN/Err) — Auto-Healing...`;
+          dot.className = 'w-2 h-2 rounded-full bg-[#1890FF] animate-ping inline-block';
+          txt.textContent = 'Auto-Healing Scene...';
           await runSelfHealLoop('Physics telemetry detected NaN coordinate or unbounded energy blowup.');
         } else {
-          badge.className = 'flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 text-xs font-medium';
-          dot.className = 'w-2 h-2 rounded-full bg-emerald-400 animate-pulse';
-          txt.textContent = `Verified: ${data.fps} FPS • 0 NaN • Bounded`;
+          dot.className = 'w-2 h-2 rounded-full bg-[#30D158] inline-block';
+          txt.textContent = `${data.fps} FPS · Verified`;
         }
       }
 
@@ -564,20 +1129,17 @@
       }
     });
 
-    // Demonstrate Autonomous Verification & Self-Healing Loop live for judges
     async function triggerFaultInjectionTest() {
-      const badge = document.getElementById('verify-badge');
+      const dot = document.getElementById('verify-dot');
       const txt = document.getElementById('verify-text');
-      badge.className = 'flex items-center gap-2 px-3 py-1.5 rounded-lg bg-rose-950/80 border border-rose-500/60 text-rose-200 text-xs font-medium';
-      txt.textContent = '💥 Injected r=0 Singularity Fault -> Calling Argon Self-Heal...';
-      highlightPill('pill-argon', true);
-
+      dot.className = 'w-2 h-2 rounded-full bg-[#1890FF] animate-ping inline-block';
+      txt.textContent = 'Repairing r=0 Singularity...';
       await runSelfHealLoop('Simulated singularity fault: division by r=0 produced NaN in position vector.');
     }
 
     async function runSelfHealLoop(errorReport) {
       try {
-        document.getElementById('trace-summary').innerHTML = `🔧 <strong class="text-amber-300">Autonomous Verification Loop:</strong> Gemini 4 Argon patching fault...`;
+        document.getElementById('trace-summary').textContent = 'Self-Healing 3D Scene...';
         const res = await fetch('/api/self-heal', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -591,52 +1153,43 @@
         if (data.html) {
           injectSimulationHtml(data.html);
           if (data.interaction_id) currentInteractionId = data.interaction_id;
-          document.getElementById('trace-summary').innerHTML = `✅ <strong class="text-emerald-400">Self-Heal Complete (${data.latency_ms}ms):</strong> ${data.patch_summary}`;
+          document.getElementById('trace-summary').textContent = `Patched in ${data.latency_ms}ms · Code & Trace`;
         }
       } catch (e) {
         console.error('Self-heal failed:', e);
       }
     }
 
-    function highlightPill(id, active) {
-      const el = document.getElementById(id);
-      if (el) el.classList.toggle('active', active);
-    }
-
     async function generateSimulation(isFollowup = false) {
-      const promptEl = isFollowup ? document.getElementById('followup-input') : document.getElementById('prompt-input');
-      const prompt = promptEl.value.trim();
-      if (!prompt) return;
+      const promptInput = document.getElementById('prompt-input');
+      const followupInput = document.getElementById('followup-input');
+      const rawPrompt = (isFollowup && followupInput && followupInput.value.trim())
+        ? followupInput.value.trim()
+        : (promptInput.value.trim() || (presetsData[currentPresetId] && presetsData[currentPresetId].prompt) || '');
+      if (!rawPrompt) return;
 
+      hideVoiceHeroLaunchpad();
       const overlay = document.getElementById('loading-overlay');
+      const stepTxt = document.getElementById('loading-step');
       const quoteEl = document.getElementById('loading-spoken-quote');
       const bar = document.getElementById('loading-bar');
-      const stageBox2 = document.getElementById('stage-box-2');
-      const stageDesc1 = document.getElementById('stage-desc-1');
       overlay.classList.remove('hidden');
-      quoteEl.textContent = `"${prompt}"`;
+      if (quoteEl) quoteEl.textContent = `"${rawPrompt}"`;
 
-      highlightPill('pill-lite', true);
-      highlightPill('pill-argon-high', true);
-      stageDesc1.textContent = 'Checking physical accuracy, conservation laws & required symplectic solver...';
-      stageBox2.classList.add('opacity-60');
-      bar.style.width = '40%';
+      stepTxt.textContent = 'Step 1: Verifying physics accuracy & conservation invariants (Gemini 4 Argon High)...';
+      bar.style.width = '38%';
 
       const timer1 = setTimeout(() => {
-        highlightPill('pill-flash', true);
-        highlightPill('pill-argon', true);
-        stageDesc1.textContent = '✓ Physics Accuracy Verified! Handing governing equations to 3D Architect...';
-        stageBox2.classList.remove('opacity-60');
-        stageBox2.className = 'p-3 rounded-xl bg-sky-950/40 border border-sky-500/40 flex items-start gap-2.5 transition-opacity';
-        bar.style.width = '82%';
-      }, 320);
+        stepTxt.textContent = 'Step 2: Synthesizing 3D scene (Gemini 4 Argon Medium) & curriculum (Gemini 3.8 Flash)...';
+        bar.style.width = '78%';
+      }, 450);
 
       try {
         const res = await fetch('/api/generate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            prompt: prompt,
+            prompt: rawPrompt,
             previous_interaction_id: isFollowup ? currentInteractionId : null
           })
         });
@@ -651,56 +1204,55 @@
 
         bar.style.width = '100%';
         currentInteractionId = data.interaction_id;
-        document.getElementById('session-badge').textContent = currentInteractionId
-          ? `Stateful ID: ${String(currentInteractionId).slice(0, 10)}...`
-          : 'Live Generated';
+
+        const statefulLabel = currentInteractionId
+          ? `Session · ${String(currentInteractionId).slice(0, 6)}`
+          : 'Custom Lab';
+        document.getElementById('session-badge').textContent = statefulLabel;
+        const archStateful = document.getElementById('arch-stateful-id');
+        if (archStateful) archStateful.textContent = statefulLabel;
+
+        document.querySelectorAll('.preset-pill').forEach(btn => btn.classList.remove('active-preset'));
 
         if (data.physics_accuracy_check) {
           renderPhysicsAccuracyAudit(data.physics_accuracy_check);
         }
         if (data.curriculum) {
           currentCurriculum = data.curriculum;
+          discussedQuestions = {};
           renderCurriculum(data.curriculum, data.physics_accuracy_check?.domain);
         }
         if (data.html) {
           injectSimulationHtml(data.html);
         }
-        if (isFollowup) {
-          document.getElementById('followup-input').value = '';
-        }
+        promptInput.value = '';
+        if (followupInput) followupInput.value = '';
 
-        // Render trace in drawer
         const traceList = document.getElementById('trace-list');
         traceList.innerHTML = (data.orchestration_trace || []).map(t => `
-          <div class="p-2 rounded-lg bg-slate-950 border border-slate-800">
-            <div class="flex justify-between text-sky-300 font-semibold">
+          <div class="p-2.5 rounded-xl theme-card">
+            <div class="flex justify-between text-accent font-medium">
               <span>${t.model}</span>
               <span>${t.latency_ms} ms</span>
             </div>
-            <div class="text-slate-300 text-[11px] font-medium">${t.step}</div>
-            <div class="text-slate-500 text-[10px]">${t.detail}</div>
+            <div class="text-theme-primary text-[11px] mt-0.5">${t.step}</div>
+            <div class="text-theme-secondary text-[10.5px]">${t.detail}</div>
           </div>
         `).join('');
 
-        document.getElementById('trace-summary').innerHTML =
-          `✅ <strong class="text-emerald-400">Physics Verified</strong> & <strong class="text-sky-400">3D Modeled</strong> in ${(data.total_latency_ms / 1000).toFixed(2)}s`;
+        document.getElementById('trace-summary').textContent =
+          `Generated in ${(data.total_latency_ms / 1000).toFixed(1)}s · Code & Trace`;
       } catch (err) {
         alert('Error calling backend: ' + err.message);
       } finally {
         overlay.classList.add('hidden');
-        setTimeout(() => {
-          highlightPill('pill-lite', false);
-          highlightPill('pill-argon-high', false);
-          highlightPill('pill-flash', false);
-        }, 1200);
       }
     }
 
-    // Voice Input: Instant Web Speech API live captions + auto-trigger Physics Check -> 3D Model
     function toggleVoiceRecording() {
       const btn = document.getElementById('btn-mic');
-      const label = document.getElementById('mic-label');
       const heroBtn = document.getElementById('btn-hero-mic');
+      const label = document.getElementById('mic-label');
       const heroLabel = document.getElementById('hero-mic-label');
       const heroStatus = document.getElementById('hero-voice-status');
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -711,7 +1263,7 @@
       }
 
       if (!SpeechRecognition) {
-        alert('Web Speech API not supported in this browser window. Type your spoken concept in the prompt box!');
+        alert('Web Speech API not supported in this browser window. Type your prompt directly.');
         return;
       }
 
@@ -720,16 +1272,13 @@
       recognition.interimResults = true;
       recognition.continuous = false;
 
-      let capturedTranscript = '';
-
       recognition.onstart = () => {
         isRecording = true;
-        btn.classList.add('mic-recording');
-        label.textContent = 'Listening...';
+        if (btn) btn.classList.add('mic-recording');
         if (heroBtn) heroBtn.classList.add('mic-recording');
+        if (label) label.textContent = 'Listening...';
         if (heroLabel) heroLabel.textContent = 'Listening...';
-        if (heroStatus) heroStatus.innerHTML = '<span class="text-rose-400 font-bold">🔴 Listening to Sarah... Speak your physics concept naturally!</span>';
-        highlightPill('pill-transcribe', true);
+        if (heroStatus) heroStatus.textContent = 'Listening... speak any physics concept aloud';
       };
 
       recognition.onresult = (event) => {
@@ -737,23 +1286,18 @@
         for (let i = 0; i < event.results.length; i++) {
           transcript += event.results[i][0].transcript;
         }
-        capturedTranscript = transcript.trim();
-        document.getElementById('prompt-input').value = capturedTranscript;
-        if (heroStatus) {
-          heroStatus.innerHTML = `🎙️ Heard: <span class="text-sky-300 font-semibold">"${capturedTranscript}"</span>`;
-        }
+        document.getElementById('prompt-input').value = transcript;
+        const heroInput = document.getElementById('hero-prompt-input');
+        if (heroInput) heroInput.value = transcript;
       };
 
       recognition.onend = () => {
         isRecording = false;
-        btn.classList.remove('mic-recording');
-        label.textContent = 'Speak Concept';
+        if (btn) btn.classList.remove('mic-recording');
         if (heroBtn) heroBtn.classList.remove('mic-recording');
+        if (label) label.textContent = 'Voice';
         if (heroLabel) heroLabel.textContent = 'Tap & Speak';
-        setTimeout(() => highlightPill('pill-transcribe', false), 800);
-
-        // Automatically run Step 1 (Physics Check) -> Step 2 (3D Model) as soon as Sarah finishes speaking!
-        if (capturedTranscript.length > 2) {
+        if (document.getElementById('prompt-input').value.trim()) {
           generateSimulation(false);
         }
       };
@@ -761,13 +1305,11 @@
       recognition.start();
     }
 
-    // Companion Voice Narration (gemini-3.8-flash-tts + Web Speech synthesis fallback)
     async function playTeacherNarration() {
       if (!currentCurriculum) return;
       const text = currentCurriculum.tts_narration || currentCurriculum.teacher_guide;
       const btnLabel = document.getElementById('tts-label');
-      btnLabel.textContent = 'Synthesizing...';
-      highlightPill('pill-tts', true);
+      btnLabel.textContent = 'Preparing Audio...';
 
       try {
         const res = await fetch('/api/tts', {
@@ -778,38 +1320,33 @@
         const data = await res.json();
         if (data.audio_base64) {
           const audio = new Audio(`data:${data.mime_type || 'audio/wav'};base64,${data.audio_base64}`);
-          btnLabel.textContent = 'Playing TTS...';
+          btnLabel.textContent = 'Playing Overview...';
           audio.onended = () => {
-            btnLabel.textContent = '15s Audio Guide';
-            highlightPill('pill-tts', false);
+            btnLabel.textContent = 'Listen to 15s Overview';
           };
           audio.play();
         } else if ('speechSynthesis' in window) {
           window.speechSynthesis.cancel();
           const utter = new SpeechSynthesisUtterance(text);
           utter.rate = 1.04;
-          btnLabel.textContent = 'Speaking...';
+          btnLabel.textContent = 'Playing Overview...';
           utter.onend = () => {
-            btnLabel.textContent = '15s Audio Guide';
-            highlightPill('pill-tts', false);
+            btnLabel.textContent = 'Listen to 15s Overview';
           };
           window.speechSynthesis.speak(utter);
         }
       } catch (e) {
-        btnLabel.textContent = '15s Audio Guide';
-        highlightPill('pill-tts', false);
+        btnLabel.textContent = 'Listen to 15s Overview';
       }
     }
 
-    // Human-in-the-Loop Google Classroom Publication Gate
     async function openPublishModal() {
       document.getElementById('publish-modal').classList.remove('hidden');
       document.getElementById('publish-result').classList.add('hidden');
       document.getElementById('btn-confirm-pub').disabled = false;
       document.getElementById('pub-title').textContent = currentCurriculum?.concept || '3D Physics Lab';
-      document.getElementById('pub-size').textContent = `${(currentHtml.length / 1024).toFixed(1)} KB Standalone Three.js`;
-      document.getElementById('pub-audit').textContent = 'Scanning outbound payload with Subagent 3 (FERPA Gate)...';
-      highlightPill('pill-lite', true);
+      document.getElementById('pub-size').textContent = `${(currentHtml.length / 1024).toFixed(1)} KB`;
+      document.getElementById('pub-audit').textContent = 'Scanning payload with gemini-3.5-flash-lite...';
 
       const res = await fetch('/api/publish-preview', {
         method: 'POST',
@@ -824,8 +1361,7 @@
       const data = await res.json();
       currentApprovalId = data.approval_id;
       document.getElementById('pub-audit').textContent =
-        `✓ ${data.ferpa_audit.audit_note} (${data.ferpa_audit.latency_ms}ms)`;
-      setTimeout(() => highlightPill('pill-lite', false), 600);
+        `Verified · ${data.ferpa_audit.audit_note} (${data.ferpa_audit.latency_ms}ms)`;
     }
 
     function closePublishModal() {
@@ -852,7 +1388,7 @@
       }
       const resBox = document.getElementById('publish-result');
       resBox.classList.remove('hidden');
-      resBox.innerHTML = `✅ <strong>Published to Google Classroom!</strong> Assignment ID <span class="mono">${data.approval_id}</span> is now live for 28 students.`;
+      resBox.innerHTML = `Published to Google Classroom (ID: <span class="mono">${data.approval_id}</span>).`;
       document.getElementById('btn-confirm-pub').disabled = true;
       const counter = document.getElementById('published-counter');
       counter.classList.remove('hidden');
