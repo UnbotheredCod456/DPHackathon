@@ -828,15 +828,16 @@ async def run_argon_3d_architect(
     t0 = time.perf_counter()
     matched_50 = match_50_physics_model(prompt)
 
-    # Check if this matches one of the 50 canonical models or no live API key is set
-    if matched_50 or not get_api_key():
-        if previous_interaction_id and previous_interaction_id in INTERACTION_SCENE_CACHE and not matched_50:
+    # Check if this is a multi-turn refinement on a cached scene and no live API key is set (or for instant fast-path)
+    if not get_api_key():
+        synth_info: Dict[str, Any] = {}
+        if previous_interaction_id and previous_interaction_id in INTERACTION_SCENE_CACHE:
             base_html = INTERACTION_SCENE_CACHE[previous_interaction_id]
             refined_html = apply_multiturn_refinement(base_html, prompt)
         else:
-            synth = synthesize_parametric_3d_lab(prompt, physics_audit=physics_audit)
-            refined_html = synth["html"]
-            if previous_interaction_id and not matched_50:
+            synth_info = synthesize_parametric_3d_lab(prompt, physics_audit=physics_audit)
+            refined_html = synth_info["html"]
+            if previous_interaction_id:
                 refined_html = apply_multiturn_refinement(refined_html, prompt)
 
         verified_html, verification_report = verify_and_instrument_3d_html(strip_combining_arrows(refined_html))
@@ -860,6 +861,9 @@ async def run_argon_3d_architect(
             "thinking_level": "medium",
             "html": verified_html,
             "verification": verification_report,
+            "experiment_id": synth_info.get("experiment_id"),
+            "matched_keywords": synth_info.get("matched_keywords", []),
+            "parameter_overrides": synth_info.get("parameter_overrides", {}),
         }
 
     client = get_client()
