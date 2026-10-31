@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>18. Thermodynamic PV Diagram Simulator & Carnot Engine</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #070b14; color: #e2e8f0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; overflow: hidden; }
+  canvas { display: block; width: 100vw; height: 100vh; }
+  #hud {
+    position: fixed; bottom: 18px; left: 18px; z-index: 10;
+    background: rgba(10, 16, 30, 0.88); backdrop-filter: blur(10px);
+    border: 1px solid rgba(99, 179, 237, 0.28); border-radius: 12px;
+    padding: 14px 18px; min-width: 330px; box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+    font-size: 12.5px; line-height: 1.55;
+  }
+  #hud h2 { font-size: 14px; font-weight: 700; color: #63b3ed; margin-bottom: 6px; }
+  .row { display: flex; justify-content: space-between; gap: 14px; font-variant-numeric: tabular-nums; }
+  .label { color: #94a3b8; }
+  .val { color: #f8fafc; font-weight: 600; }
+  .legend { margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(148,163,184,0.18); display: flex; flex-wrap: wrap; gap: 10px; font-size: 11.5px; }
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+    "lil-gui": "https://unpkg.com/lil-gui@0.19.1/dist/lil-gui.esm.min.js"
+  }
+}
+</script>
+</head>
+<body>
+<div id="hud">
+  <h2>Thermodynamic PV Simulator & Carnot Engine</h2>
+  <div class="row"><span class="label">Active Process:</span><span class="val" id="v-proc">Carnot Cycle</span></div>
+  <div class="row"><span class="label">State (P, V, T):</span><span class="val" id="v-pvt">0.0 kPa, 0.0 L, 0 K</span></div>
+  <div class="row"><span class="label">First Law (ΔU = Q − W):</span><span class="val" id="v-law">0 = 0 − 0 J</span></div>
+  <div class="row"><span class="label">Carnot Efficiency η = 1 − T_C/T_H:</span><span class="val" id="v-eff">50.0%</span></div>
+  <div class="legend">
+    <span><i class="dot" style="background:#f43f5e"></i>Isotherm T_H / Force</span>
+    <span><i class="dot" style="background:#38bdf8"></i>Isotherm T_C</span>
+    <span><i class="dot" style="background:#facc15"></i>Adiabat / Piston v</span>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import GUI from 'lil-gui';
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x070b14);
+
+const camera = new THREE.PerspectiveCamera(46, window.innerWidth / window.innerHeight, 0.1, 200);
+camera.position.set(0, 6.5, 22);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+document.body.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+
+scene.add(new THREE.AmbientLight(0x94a3b8, 0.85));
+const dirLight = new THREE.DirectionalLight(0xffffff, 1.4);
+dirLight.position.set(10, 20, 16);
+scene.add(dirLight);
+
+const params = {
+  mode: 'Carnot Cycle',
+  Th: 600,
+  Tc: 300,
+  gamma: 1.4,
+  cycleSpeed: 0.55,
+  paused: false,
+  reset: () => { phase = 0; rebuildPVDiagram(); }
+};
+
+// Left Side: 3D Cylinder + Piston + Gas Particles (-5.5 X offset)
+const cylGroup = new THREE.Group();
+cylGroup.position.set(-5.8, -2.5, 0);
+scene.add(cylGroup);
+
+const cylRadius = 2.4;
+const cylWall = new THREE.Mesh(
+  new THREE.CylinderGeometry(cylRadius, cylRadius, 9, 32, 1, true),
+  new THREE.MeshStandardMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.22, side: THREE.DoubleSide })
+);
+cylWall.position.y = 4.5;
+cylGroup.add(cylWall);
+
+const basePlate = new THREE.Mesh(
+  new THREE.CylinderGeometry(cylRadius * 1.05, cylRadius * 1.05, 0.4, 32),
+  new THREE.MeshStandardMaterial({ color: 0xf43f5e, emissive: 0x991b1b, emissiveIntensity: 0.5 })
+);
+basePlate.position.y = -0.2;
+cylGroup.add(basePlate);
+
+const pistonHead = new THREE.Mesh(
+  new THREE.CylinderGeometry(cylRadius * 0.98, cylRadius * 0.98, 0.65, 32),
+  new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.7, roughness: 0.25 })
+);
+cylGroup.add(pistonHead);
+
+const forceArrow = new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 4, 0), 2.0, 0xf43f5e, 0.45, 0.25);
+const velArrow = new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), new THREE.Vector3(0.7, 4, 0), 1.5, 0xfacc15, 0.35, 0.2);
+cylGroup.add(forceArrow, velArrow);
+
+// Gas molecules inside cylinder
+const gasCount = 65;
+const gasGeo = new THREE.SphereGeometry(0.14, 10, 10);
+const gasMat = new THREE.MeshStandardMaterial({ color: 0x38bdf8, emissive: 0x0284c7, emissiveIntensity: 0.5 });
+const gasInst = new THREE.InstancedMesh(gasGeo, gasMat, gasCount);
+cylGroup.add(gasInst);
+const gasSeeds = Array.from({ length: gasCount }, () => ({
+  r: Math.sqrt(Math.random()) * (cylRadius - 0.3),
+  theta: Math.random() * Math.PI * 2,
+  yFrac: 0.08 + Math.random() * 0.84,
+  omega: (Math.random() - 0.5) * 4
+}));
+const dummy = new THREE.Object3D();
+
+// Right Side: 3D Glowing PV Diagram (+4.2 X offset)
+const pvGroup = new THREE.Group();
+pvGroup.position.set(2.0, -3.2, 0);
+scene.add(pvGroup);
+
+// PV Axes
+const axisX = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 0, 0), 8.5, 0x94a3b8, 0.3, 0.16);
+const axisY = new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 0), 8.5, 0x94a3b8, 0.3, 0.16);
+pvGroup.add(axisX, axisY);
+
+const curveLine = new THREE.Line(
+  new THREE.BufferGeometry(),
+  new THREE.LineBasicMaterial({ color: 0x38bdf8, linewidth: 2 })
+);
+pvGroup.add(curveLine);
+
+const stateMarker = new THREE.Mesh(
+  new THREE.SphereGeometry(0.26, 20, 20),
+  new THREE.MeshStandardMaterial({ color: 0xfacc15, emissive: 0xeab308, emissiveIntensity: 0.9 })
+);
+pvGroup.add(stateMarker);
+
+let pvPoints = [];
+let phase = 0;
+
+function sampleProcessPoint(u) {
+  const R = 0.012;
+  const Th = params.Th;
+  const Tc = Math.min(params.Tc, Th - 40);
+  const g = params.gamma;
+  const V1 = 1.6, V2 = 3.2;
+
+  if (params.mode === 'Isothermal') {
+    const V = V1 + (V2 * 1.5 - V1) * (0.5 - 0.5 * Math.cos(u * Math.PI * 2));
+    const P = (R * Th) / V;
+    return { V, P, T: Th, dU: 0, W: R * Th * Math.log(V / V1) * 100 };
+  }
+  if (params.mode === 'Adiabatic') {
+    const V = V1 + (V2 * 1.5 - V1) * (0.5 - 0.5 * Math.cos(u * Math.PI * 2));
+    const P1 = (R * Th) / V1;
+    const P = P1 * Math.pow(V1 / V, g);
+    const T = (P * V) / R;
+    const dU = (T - Th) * 1.2;
+    return { V, P, T, dU, W: -dU };
+  }
+  if (params.mode === 'Isobaric') {
+    const P = (R * Th) / V2;
+    const V = V1 + (V2 * 1.4 - V1) * (0.5 - 0.5 * Math.cos(u * Math.PI * 2));
+    const T = (P * V) / R;
+    const W = P * (V - V1) * 100;
+    const dU = 2.5 * W;
+    return { V, P, T, dU, W };
+  }
+
+  // Full 4-stage Carnot Cycle
+  const V3 = V2 * Math.pow(Th / Tc, 1 / (g - 1));
+  const V4 = V1 * Math.pow(Th / Tc, 1 / (g - 1));
+  let V, P, T;
+  if (u < 0.25) {
+    const s = u / 0.25;
+    V = V1 + (V2 - V1) * s;
+    T = Th;
+    P = (R * Th) / V;
+  } else if (u < 0.5) {
+    const s = (u - 0.25) / 0.25;
+    V = V2 + (V3 - V2) * s;
+    const P2 = (R * Th) / V2;
+    P = P2 * Math.pow(V2 / V, g);
+    T = (P * V) / R;
+  } else if (u < 0.75) {
+    const s = (u - 0.5) / 0.25;
+    V = V3 + (V4 - V3) * s;
+    T = Tc;
+    P = (R * Tc) / V;
+  } else {
+    const s = (u - 0.75) / 0.25;
+    V = V4 + (V1 - V4) * s;
+    const P4 = (R * Tc) / V4;
+    P = P4 * Math.pow(V4 / V, g);
+    T = (P * V) / R;
+  }
+  const dU = (T - Th) * 0.8;
+  const W = (Th - Tc) * 0.45 * Math.sin(u * Math.PI * 2);
+  return { V, P, T, dU, W };
+}
+
+function rebuildPVDiagram() {
+  pvPoints = [];
+  const N = 160;
+  for (let i = 0; i <= N; i++) {
+    const st = sampleProcessPoint(i / N);
+    pvPoints.push(new THREE.Vector3(st.V * 1.15, st.P * 1.45, 0));
+  }
+  curveLine.geometry.dispose();
+  curveLine.geometry = new THREE.BufferGeometry().setFromPoints(pvPoints);
+  document.getElementById('v-proc').textContent = params.mode;
+}
+
+const gui = new GUI({ title: 'Thermodynamic Cycle Controls' });
+gui.add(params, 'mode', ['Carnot Cycle', 'Isothermal', 'Adiabatic', 'Isobaric']).name('Process Type').onChange(() => rebuildPVDiagram());
+gui.add(params, 'Th', 400, 800, 10).name('Hot Reservoir T_H (K)').onChange(() => rebuildPVDiagram());
+gui.add(params, 'Tc', 180, 380, 10).name('Cold Reservoir T_C (K)').onChange(() => rebuildPVDiagram());
+gui.add(params, 'cycleSpeed', 0.1, 1.5, 0.05).name('Engine Speed');
+gui.add(params, 'paused').name('Pause');
+gui.add(params, 'reset').name('Reset Cycle');
+
+rebuildPVDiagram();
+
+let lastTime = performance.now();
+let frames = 0;
+let lastTelemetry = performance.now();
+let prevV = 2.0;
+let runtimeErrors = [];
+window.addEventListener('error', (e) => runtimeErrors.push(e.message));
+
+function animate(now) {
+  requestAnimationFrame(animate);
+  frames++;
+  const dt = Math.min((now - lastTime) / 1000, 0.04);
+  lastTime = now;
+
+  if (!params.paused) {
+    phase = (phase + dt * params.cycleSpeed * 0.35) % 1.0;
+  }
+
+  const st = sampleProcessPoint(phase);
+  const dVdt = (st.V - prevV) / Math.max(1e-3, dt);
+  prevV = st.V;
+
+  // Update Piston & Cylinder
+  const pistonY = Math.min(8.2, Math.max(1.2, st.V * 1.15));
+  pistonHead.position.y = pistonY;
+
+  forceArrow.position.set(0, pistonY + 0.35, 0);
+  forceArrow.setLength(Math.min(3.0, 0.5 + st.P * 0.4), 0.42, 0.22);
+
+  velArrow.position.set(0.85, pistonY + 0.35, 0);
+  velArrow.setDirection(new THREE.Vector3(0, dVdt >= 0 ? 1 : -1, 0));
+  velArrow.setLength(Math.min(2.2, 0.35 + Math.abs(dVdt) * 0.35), 0.32, 0.18);
+
+  const tFrac = Math.min(1, Math.max(0, (st.T - 180) / 620));
+  basePlate.material.color.setHSL(0.6 - tFrac * 0.58, 0.9, 0.5);
+  gasMat.color.setHSL(0.6 - tFrac * 0.58, 0.85, 0.55);
+
+  for (let i = 0; i < gasCount; i++) {
+    const g = gasSeeds[i];
+    const ang = g.theta + now * 0.002 * g.omega * (0.5 + tFrac * 1.8);
+    dummy.position.set(
+      Math.cos(ang) * g.r,
+      g.yFrac * (pistonY - 0.45),
+      Math.sin(ang) * g.r
+    );
+    dummy.updateMatrix();
+    gasInst.setMatrixAt(i, dummy.matrix);
+  }
+  gasInst.instanceMatrix.needsUpdate = true;
+
+  // Update 3D PV State Marker
+  stateMarker.position.set(st.V * 1.15, st.P * 1.45, 0);
+
+  const Q = st.dU + st.W;
+  const eff = (1 - Math.min(params.Tc, params.Th - 20) / params.Th) * 100;
+  document.getElementById('v-pvt').textContent = `${(st.P * 40).toFixed(0)} kPa, ${st.V.toFixed(2)} L, ${Math.round(st.T)} K`;
+  document.getElementById('v-law').textContent = `${st.dU.toFixed(0)} = ${Q.toFixed(0)} − ${st.W.toFixed(0)} J`;
+  document.getElementById('v-eff').textContent = `${eff.toFixed(1)}%`;
+
+  if (now - lastTelemetry >= 1000) {
+    const fps = Math.round((frames * 1000) / (now - lastTelemetry));
+    frames = 0;
+    lastTelemetry = now;
+    window.parent.postMessage({
+      type: 'physicraft_telemetry',
+      fps,
+      hasNaN: !Number.isFinite(st.P) || !Number.isFinite(st.V),
+      errors: runtimeErrors,
+      energyBounded: true
+    }, '*');
+  }
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+requestAnimationFrame(animate);
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+</body>
+</html>

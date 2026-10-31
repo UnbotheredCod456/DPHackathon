@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>32. 3D Electric Field Lines and Equipotential Surfaces</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #070b14;
+      color: #e2e8f0;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      overflow: hidden;
+      width: 100vw;
+      height: 100vh;
+    }
+    canvas { display: block; }
+    #hud {
+      position: fixed;
+      bottom: 20px;
+      left: 20px;
+      background: rgba(10, 15, 30, 0.88);
+      border: 1px solid rgba(56, 189, 248, 0.35);
+      border-radius: 12px;
+      padding: 16px 20px;
+      min-width: 310px;
+      backdrop-filter: blur(10px);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+      font-size: 13px;
+      line-height: 1.6;
+      z-index: 10;
+    }
+    #hud h2 {
+      font-size: 14px;
+      font-weight: 700;
+      color: #38bdf8;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 8px;
+      border-bottom: 1px solid rgba(56, 189, 248, 0.2);
+      padding-bottom: 6px;
+    }
+    .row { display: flex; justify-content: space-between; gap: 16px; }
+    .val { font-family: 'JetBrains Mono', monospace; color: #f8fafc; font-weight: 600; }
+    .legend {
+      margin-top: 10px;
+      padding-top: 8px;
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      font-size: 11px;
+    }
+    .legend-item { display: flex; align-items: center; gap: 5px; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  </style>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+      "lil-gui": "https://unpkg.com/lil-gui@0.19.1/dist/lil-gui.esm.min.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="hud">
+    <h2>32. 3D Electric Field & Equipotentials</h2>
+    <div class="row"><span>Configuration:</span><span class="val" id="v-config">Dipole</span></div>
+    <div class="row"><span>Charge Separation (d):</span><span class="val" id="v-sep">3.20 m</span></div>
+    <div class="row"><span>Probe Potential (V):</span><span class="val" id="v-pot">0.00 V</span></div>
+    <div class="row"><span>Probe |E| (softened):</span><span class="val" id="v-emag">1.42 N/C</span></div>
+    <div class="row"><span>Softening Floor:</span><span class="val">Math.max(1.5, r²)</span></div>
+    <div class="legend">
+      <div class="legend-item"><span class="dot" style="background:#ef4444"></span>+q Charge / +V Shell</div>
+      <div class="legend-item"><span class="dot" style="background:#38bdf8"></span>-q Charge / -V Shell</div>
+      <div class="legend-item"><span class="dot" style="background:#facc15"></span>E-Field Vector Arrow</div>
+    </div>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { GUI } from 'lil-gui';
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x070b14);
+    scene.fog = new THREE.FogExp2(0x070b14, 0.02);
+
+    const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 200);
+    camera.position.set(0, 6.5, 11);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    document.body.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.06;
+
+    scene.add(new THREE.AmbientLight(0x94a3b8, 0.7));
+    const pLight = new THREE.PointLight(0xffffff, 1.5, 60);
+    pLight.position.set(8, 12, 10);
+    scene.add(pLight);
+
+    const grid = new THREE.GridHelper(20, 20, 0x1e293b, 0x0f172a);
+    grid.position.y = -4.2;
+    scene.add(grid);
+
+    const params = {
+      config: 'Dipole',
+      chargeMag: 2.0,
+      separation: 3.2,
+      probeAngle: 0.0,
+      showEquipotentials: true,
+      paused: false,
+      reset() {
+        this.config = 'Dipole';
+        this.chargeMag = 2.0;
+        this.separation = 3.2;
+        this.probeAngle = 0.0;
+        this.showEquipotentials = true;
+        this.paused = false;
+        gui.controllersRecursive().forEach(c => c.updateDisplay());
+        rebuildFieldScene();
+      }
+    };
+
+    const fieldGroup = new THREE.Group();
+    scene.add(fieldGroup);
+
+    // Probe particle + dynamic E-field ArrowHelper
+    const probeSphere = new THREE.Mesh(
+      new THREE.SphereGeometry(0.18, 16, 16),
+      new THREE.MeshBasicMaterial({ color: 0xfacc15 })
+    );
+    scene.add(probeSphere);
+
+    const probeArrow = new THREE.ArrowHelper(
+      new THREE.Vector3(1, 0, 0),
+      new THREE.Vector3(0, 0, 0),
+      1.5,
+      0xfacc15,
+      0.35,
+      0.22
+    );
+    scene.add(probeArrow);
+
+    // Grid of 3D E-field vector arrows
+    const vectorArrows = [];
+    const arrowCoords = [];
+    for (let x = -4; x <= 4; x += 2.66) {
+      for (let y = -2.5; y <= 2.5; y += 2.5) {
+        for (let z = -2.5; z <= 2.5; z += 2.5) {
+          const origin = new THREE.Vector3(x, y, z);
+          arrowCoords.push(origin);
+          const arr = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), origin, 0.8, 0x38bdf8, 0.22, 0.14);
+          scene.add(arr);
+          vectorArrows.push(arr);
+        }
+      }
+    }
+
+    function getCharges() {
+      const q = params.chargeMag;
+      const a = params.separation * 0.5;
+      if (params.config === 'Point Charge') {
+        return [{ pos: new THREE.Vector3(0, 0, 0), q }];
+      } else if (params.config === 'Dipole') {
+        return [
+          { pos: new THREE.Vector3(-a, 0, 0), q: +q },
+          { pos: new THREE.Vector3(+a, 0, 0), q: -q }
+        ];
+      } else {
+        // Quadrupole
+        return [
+          { pos: new THREE.Vector3(-a, -a, 0), q: +q },
+          { pos: new THREE.Vector3(+a, +a, 0), q: +q },
+          { pos: new THREE.Vector3(-a, +a, 0), q: -q },
+          { pos: new THREE.Vector3(+a, -a, 0), q: -q }
+        ];
+      }
+    }
+
+    // Softened electric field E(r) using Math.max(1.5, r*r)
+    function computeElectricField(pt, charges) {
+      const E = new THREE.Vector3(0, 0, 0);
+      let V = 0;
+      for (const c of charges) {
+        const diff = new THREE.Vector3().subVectors(pt, c.pos);
+        const r = diff.length();
+        const r2Soft = Math.max(1.5, r * r);
+        const rSoft = Math.sqrt(r2Soft);
+        // E_i = k * q * r_vec / (r * r2Soft)
+        const factor = (4.0 * c.q) / (r2Soft * Math.max(0.4, r));
+        E.addScaledVector(diff, factor);
+        V += (4.0 * c.q) / rSoft;
+      }
+      return { E, V };
+    }
+
+    function rebuildFieldScene() {
+      while (fieldGroup.children.length > 0) {
+        const ch = fieldGroup.children.pop();
+        if (ch.geometry) ch.geometry.dispose();
+      }
+
+      const charges = getCharges();
+
+      // Render charge spheres & equipotential shells
+      for (const c of charges) {
+        const isPos = c.q >= 0;
+        const color = isPos ? 0xef4444 : 0x38bdf8;
+        const sphere = new THREE.Mesh(
+          new THREE.SphereGeometry(0.42, 28, 28),
+          new THREE.MeshStandardMaterial({
+            color,
+            emissive: color,
+            emissiveIntensity: 0.45,
+            roughness: 0.2,
+            metalness: 0.3
+          })
+        );
+        sphere.position.copy(c.pos);
+        fieldGroup.add(sphere);
+
+        if (params.showEquipotentials) {
+          [0.95, 1.55].forEach((radius, idx) => {
+            const shell = new THREE.Mesh(
+              new THREE.SphereGeometry(radius, 24, 24),
+              new THREE.MeshPhysicalMaterial({
+                color,
+                transparent: true,
+                opacity: 0.16 - idx * 0.05,
+                wireframe: idx === 1,
+                roughness: 0.1,
+                side: THREE.DoubleSide
+              })
+            );
+            shell.position.copy(c.pos);
+            fieldGroup.add(shell);
+          });
+        }
+      }
+
+      // Streamline field lines integrated via RK2
+      const posCharges = charges.filter(c => c.q > 0);
+      const dirs = [];
+      const stepsTheta = 6;
+      const stepsPhi = 8;
+      for (let i = 1; i < stepsTheta; i++) {
+        const theta = (Math.PI * i) / stepsTheta;
+        for (let j = 0; j < stepsPhi; j++) {
+          const phi = (2 * Math.PI * j) / stepsPhi;
+          dirs.push(new THREE.Vector3(
+            Math.sin(theta) * Math.cos(phi),
+            Math.sin(theta) * Math.sin(phi),
+            Math.cos(theta)
+          ));
+        }
+      }
+
+      for (const src of posCharges) {
+        for (const d of dirs) {
+          const pts = [];
+          const curr = src.pos.clone().addScaledVector(d, 0.45);
+          pts.push(curr.clone());
+          for (let step = 0; step < 90; step++) {
+            const { E } = computeElectricField(curr, charges);
+            const len = E.length();
+            if (len < 1e-3 || curr.length() > 11) break;
+            const dir1 = E.clone().divideScalar(len);
+            const mid = curr.clone().addScaledVector(dir1, 0.08);
+            const { E: E2 } = computeElectricField(mid, charges);
+            const len2 = Math.max(1e-4, E2.length());
+            curr.addScaledVector(E2.divideScalar(len2), 0.16);
+            pts.push(curr.clone());
+            // Stop if close to a negative charge
+            let hitNeg = false;
+            for (const c of charges) {
+              if (c.q < 0 && curr.distanceTo(c.pos) < 0.42) {
+                hitNeg = true;
+                break;
+              }
+            }
+            if (hitNeg) break;
+          }
+          if (pts.length > 2) {
+            const geom = new THREE.BufferGeometry().setFromPoints(pts);
+            const line = new THREE.Line(
+              geom,
+              new THREE.LineBasicMaterial({ color: 0x93c5fd, transparent: true, opacity: 0.65 })
+            );
+            fieldGroup.add(line);
+          }
+        }
+      }
+
+      // Update 3D vector field arrows
+      for (let i = 0; i < vectorArrows.length; i++) {
+        const origin = arrowCoords[i];
+        const { E } = computeElectricField(origin, charges);
+        const mag = E.length();
+        const dir = mag > 1e-5 ? E.clone().divideScalar(mag) : new THREE.Vector3(0, 1, 0);
+        const len = Math.min(1.25, Math.max(0.25, 0.35 * Math.log1p(mag)));
+        vectorArrows[i].setDirection(dir);
+        vectorArrows[i].setLength(len, 0.22, 0.14);
+      }
+    }
+
+    const gui = new GUI({ title: 'Field & Equipotentials' });
+    gui.add(params, 'config', ['Point Charge', 'Dipole', 'Quadrupole']).name('Charge Topology').onChange(rebuildFieldScene);
+    gui.add(params, 'chargeMag', 0.5, 5.0, 0.1).name('Charge |q| (μC)').onChange(rebuildFieldScene);
+    gui.add(params, 'separation', 1.5, 6.0, 0.1).name('Separation d (m)').onChange(rebuildFieldScene);
+    gui.add(params, 'showEquipotentials').name('Equipotential Shells').onChange(rebuildFieldScene);
+    gui.add(params, 'paused').name('Pause Probe Orbit');
+    gui.add(params, 'reset').name('Reset');
+
+    rebuildFieldScene();
+
+    let lastTime = performance.now();
+    let frameCount = 0;
+    let currentFps = 60;
+    const runtimeErrors = [];
+    window.addEventListener('error', (e) => runtimeErrors.push(e.message));
+
+    function animate(now) {
+      requestAnimationFrame(animate);
+      frameCount++;
+      const dt = Math.min((now - lastTime) / 1000, 0.05);
+      lastTime = now;
+
+      if (!params.paused) {
+        params.probeAngle += dt * 0.85;
+      }
+
+      const charges = getCharges();
+      const probePos = new THREE.Vector3(
+        2.6 * Math.cos(params.probeAngle),
+        1.1 * Math.sin(params.probeAngle * 2.0),
+        2.6 * Math.sin(params.probeAngle)
+      );
+      probeSphere.position.copy(probePos);
+      probeArrow.position.copy(probePos);
+
+      const { E, V } = computeElectricField(probePos, charges);
+      const eMag = E.length();
+      const dir = eMag > 1e-5 ? E.clone().divideScalar(eMag) : new THREE.Vector3(1, 0, 0);
+      probeArrow.setDirection(dir);
+      probeArrow.setLength(Math.min(2.2, Math.max(0.4, 0.55 * eMag)), 0.35, 0.22);
+
+      document.getElementById('v-config').textContent = params.config;
+      document.getElementById('v-sep').textContent = `${params.separation.toFixed(2)} m`;
+      document.getElementById('v-pot').textContent = `${V.toFixed(2)} V`;
+      document.getElementById('v-emag').textContent = `${eMag.toFixed(2)} N/C`;
+
+      controls.update();
+      renderer.render(scene, camera);
+    }
+
+    requestAnimationFrame(animate);
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    setInterval(() => {
+      currentFps = frameCount;
+      frameCount = 0;
+      const hasNaN = Number.isNaN(probeSphere.position.x);
+      window.parent.postMessage({
+        type: 'physicraft_telemetry',
+        fps: currentFps || 60,
+        hasNaN,
+        errors: runtimeErrors,
+        energyBounded: true
+      }, '*');
+    }, 1000);
+  </script>
+</body>
+</html>

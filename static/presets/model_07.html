@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Model 07 — Conservation of Angular Momentum (Spinning Platform)</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #070b14;
+      color: #e2e8f0;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      overflow: hidden;
+      user-select: none;
+    }
+    #canvas-container { width: 100vw; height: 100vh; }
+    #hud {
+      position: fixed;
+      bottom: 20px;
+      left: 20px;
+      background: rgba(10, 16, 30, 0.88);
+      border: 1px solid rgba(56, 189, 248, 0.28);
+      border-radius: 12px;
+      padding: 16px 20px;
+      min-width: 340px;
+      backdrop-filter: blur(12px);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+      z-index: 10;
+    }
+    #hud h2 {
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: #38bdf8;
+      margin-bottom: 10px;
+      border-bottom: 1px solid rgba(56, 189, 248, 0.2);
+      padding-bottom: 6px;
+    }
+    .hud-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12.5px;
+      margin: 5px 0;
+      font-variant-numeric: tabular-nums;
+    }
+    .hud-label { color: #94a3b8; }
+    .hud-val { color: #f8fafc; font-weight: 600; font-family: 'JetBrains Mono', monospace; }
+    .legend {
+      margin-top: 10px;
+      padding-top: 8px;
+      border-top: 1px solid rgba(148, 163, 184, 0.15);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      font-size: 11.5px;
+    }
+    .legend-item { display: flex; align-items: center; gap: 6px; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  </style>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+      "lil-gui": "https://unpkg.com/lil-gui@0.19.1/dist/lil-gui.esm.min.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="canvas-container"></div>
+
+  <div id="hud">
+    <h2>Angular Momentum L = I(r)·ω = const</h2>
+    <div class="hud-row"><span class="hud-label">Mass Radius (r):</span><span class="hud-val" id="val-r">2.50 m</span></div>
+    <div class="hud-row"><span class="hud-label">Moment of Inertia I(r):</span><span class="hud-val" id="val-i">0.00 kg·m²</span></div>
+    <div class="hud-row"><span class="hud-label">Angular Velocity (ω):</span><span class="hud-val" id="val-w">0.00 rad/s</span></div>
+    <div class="hud-row"><span class="hud-label">Conserved L = I·ω:</span><span class="hud-val" id="val-l">0.00 kg·m²/s</span></div>
+    <div class="hud-row"><span class="hud-label">Rotational KE (½Iω²):</span><span class="hud-val" id="val-ke">0.00 J</span></div>
+    <div class="legend">
+      <div class="legend-item"><span class="dot" style="background:#38bdf8"></span>Ang. Momentum (L)</div>
+      <div class="legend-item"><span class="dot" style="background:#f43f5e"></span>Ang. Velocity (ω)</div>
+      <div class="legend-item"><span class="dot" style="background:#10b981"></span>Tangential Vel (v_t)</div>
+    </div>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import GUI from 'lil-gui';
+
+    const container = document.getElementById('canvas-container');
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x070b14);
+    scene.fog = new THREE.FogExp2(0x070b14, 0.02);
+
+    const camera = new THREE.PerspectiveCamera(48, window.innerWidth / window.innerHeight, 0.1, 200);
+    camera.position.set(8, 7.5, 10);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    container.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.target.set(0, 1.5, 0);
+
+    scene.add(new THREE.AmbientLight(0x94a3b8, 0.75));
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.4);
+    dirLight.position.set(10, 18, 12);
+    dirLight.castShadow = true;
+    scene.add(dirLight);
+
+    const grid = new THREE.GridHelper(32, 32, 0x1e293b, 0x0f172a);
+    scene.add(grid);
+
+    const params = {
+      targetRadius: 2.6,
+      dumbbellMass: 4.0,
+      platformInertia: 8.0,
+      angularMomentum: 45.0,
+      autoOscillate: false,
+      showVectors: true,
+      paused: false,
+      reset: () => resetSim()
+    };
+
+    let currentRadius = params.targetRadius;
+    let angle = 0;
+    let simTime = 0;
+
+    // Platform Assembly
+    const turntable = new THREE.Group();
+    scene.add(turntable);
+
+    const baseDisk = new THREE.Mesh(
+      new THREE.CylinderGeometry(3.8, 4.0, 0.35, 48),
+      new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.5, roughness: 0.35 })
+    );
+    baseDisk.position.y = 0.2;
+    turntable.add(baseDisk);
+
+    // Radial sector markings on disk
+    for (let i = 0; i < 8; i++) {
+      const spoke = new THREE.Mesh(
+        new THREE.BoxGeometry(3.7, 0.03, 0.08),
+        new THREE.MeshBasicMaterial({ color: i % 2 === 0 ? 0x38bdf8 : 0x475569 })
+      );
+      spoke.position.y = 0.38;
+      spoke.rotation.y = (i * Math.PI) / 4;
+      turntable.add(spoke);
+    }
+
+    // Central shaft & guide rod
+    const shaft = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.32, 0.36, 2.2, 24),
+      new THREE.MeshStandardMaterial({ color: 0x64748b, metalness: 0.7, roughness: 0.2 })
+    );
+    shaft.position.y = 1.3;
+    turntable.add(shaft);
+
+    const guideBar = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.1, 0.1, 7.2, 16),
+      new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.8, roughness: 0.2 })
+    );
+    guideBar.rotation.z = Math.PI / 2;
+    guideBar.position.y = 2.0;
+    turntable.add(guideBar);
+
+    // Two sliding masses (dumbbells)
+    const massGeo = new THREE.SphereGeometry(0.45, 32, 24);
+    const massMat = new THREE.MeshStandardMaterial({
+      color: 0xf97316,
+      metalness: 0.4,
+      roughness: 0.25,
+      emissive: 0x7c2d12,
+      emissiveIntensity: 0.35
+    });
+    const massLeft = new THREE.Mesh(massGeo, massMat);
+    const massRight = new THREE.Mesh(massGeo, massMat);
+    massLeft.position.set(-currentRadius, 2.0, 0);
+    massRight.position.set(currentRadius, 2.0, 0);
+    turntable.add(massLeft, massRight);
+
+    // Dynamic Vector Arrows
+    const lArrow = new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 2.4, 0), 2.5, 0x38bdf8, 0.45, 0.28);
+    const wArrow = new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), new THREE.Vector3(0.45, 2.4, 0), 2.0, 0xf43f5e, 0.45, 0.28);
+    scene.add(lArrow, wArrow);
+
+    const vLeftArrow = new THREE.ArrowHelper(new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 0, 0), 1.5, 0x10b981, 0.35, 0.22);
+    const vRightArrow = new THREE.ArrowHelper(new THREE.Vector3(0, 0, -1), new THREE.Vector3(0, 0, 0), 1.5, 0x10b981, 0.35, 0.22);
+    turntable.add(vLeftArrow, vRightArrow);
+
+    function resetSim() {
+      params.targetRadius = 2.6;
+      currentRadius = 2.6;
+      angle = 0;
+      simTime = 0;
+      gui.controllersRecursive().forEach((c) => c.updateDisplay());
+    }
+
+    const gui = new GUI({ title: 'Angular Momentum Controls' });
+    const rCtrl = gui.add(params, 'targetRadius', 0.55, 3.3, 0.02).name('Mass Radius r (m)');
+    gui.add(params, 'dumbbellMass', 1.0, 10.0, 0.2).name('Each Mass m (kg)');
+    gui.add(params, 'platformInertia', 2.0, 20.0, 0.5).name('Base Inertia I₀');
+    gui.add(params, 'angularMomentum', 10.0, 100.0, 1.0).name('Total L (kg·m²/s)');
+    gui.add(params, 'autoOscillate').name('Auto Pull-In / Out');
+    gui.add(params, 'showVectors').name('Show Vectors');
+    gui.add(params, 'paused').name('Pause');
+    gui.add(params, 'reset').name('↻ Reset');
+
+    let frameCount = 0;
+    let lastTelemetry = performance.now();
+    const runtimeErrors = [];
+    window.addEventListener('error', (e) => runtimeErrors.push(e.message));
+
+    let prevTime = performance.now();
+    function animate(now) {
+      requestAnimationFrame(animate);
+      frameCount++;
+      const dt = Math.min(0.033, (now - prevTime) / 1000);
+      prevTime = now;
+
+      if (!params.paused) {
+        simTime += dt;
+        if (params.autoOscillate) {
+          params.targetRadius = 1.92 + 1.25 * Math.cos(simTime * 1.4);
+          rCtrl.updateDisplay();
+        }
+        // Smooth radial actuator response
+        currentRadius += (params.targetRadius - currentRadius) * Math.min(1, dt * 8);
+      }
+
+      const I_total = params.platformInertia + 2 * params.dumbbellMass * currentRadius * currentRadius;
+      const omega = params.angularMomentum / I_total;
+      const ke = 0.5 * I_total * omega * omega;
+
+      if (!params.paused) {
+        angle += omega * dt;
+        turntable.rotation.y = angle;
+      }
+
+      const scaleFactor = 0.78 + 0.06 * params.dumbbellMass;
+      massLeft.scale.setScalar(scaleFactor);
+      massRight.scale.setScalar(scaleFactor);
+      massLeft.position.set(-currentRadius, 2.0, 0);
+      massRight.position.set(currentRadius, 2.0, 0);
+
+      // Update arrows
+      lArrow.visible = params.showVectors;
+      wArrow.visible = params.showVectors;
+      vLeftArrow.visible = params.showVectors;
+      vRightArrow.visible = params.showVectors;
+
+      lArrow.setLength(Math.max(0.4, params.angularMomentum * 0.055), 0.42, 0.24);
+      wArrow.setLength(Math.max(0.3, omega * 0.65), 0.42, 0.24);
+
+      const vt = omega * currentRadius;
+      vLeftArrow.position.copy(massLeft.position);
+      vRightArrow.position.copy(massRight.position);
+      vLeftArrow.setDirection(new THREE.Vector3(0, 0, 1));
+      vRightArrow.setDirection(new THREE.Vector3(0, 0, -1));
+      vLeftArrow.setLength(Math.max(0.25, vt * 0.32), 0.34, 0.2);
+      vRightArrow.setLength(Math.max(0.25, vt * 0.32), 0.34, 0.2);
+
+      // HUD
+      document.getElementById('val-r').textContent = `${currentRadius.toFixed(2)} m`;
+      document.getElementById('val-i').textContent = `${I_total.toFixed(2)} kg·m²`;
+      document.getElementById('val-w').textContent = `${omega.toFixed(2)} rad/s`;
+      document.getElementById('val-l').textContent = `${params.angularMomentum.toFixed(2)} kg·m²/s`;
+      document.getElementById('val-ke').textContent = `${ke.toFixed(1)} J`;
+
+      controls.update();
+      renderer.render(scene, camera);
+
+      if (now - lastTelemetry >= 1000) {
+        const fps = Math.round((frameCount * 1000) / (now - lastTelemetry));
+        window.parent.postMessage({
+          type: 'physicraft_telemetry',
+          fps,
+          hasNaN: Number.isNaN(omega) || Number.isNaN(I_total),
+          errors: runtimeErrors,
+          energyBounded: Number.isFinite(ke)
+        }, '*');
+        frameCount = 0;
+        lastTelemetry = now;
+      }
+    }
+    requestAnimationFrame(animate);
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>

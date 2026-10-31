@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>43. Rutherford Alpha Scattering: 3D Coulomb Repulsion Trajectories</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #070b14; color: #e2e8f0; font-family: 'Inter', -apple-system, sans-serif; overflow: hidden; }
+    canvas { display: block; width: 100vw; height: 100vh; }
+    #hud {
+      position: absolute; bottom: 20px; left: 20px; width: 370px;
+      background: rgba(15, 23, 42, 0.88); backdrop-filter: blur(12px);
+      border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 12px;
+      padding: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+      font-size: 13px; line-height: 1.5; z-index: 10;
+    }
+    #hud h2 { font-size: 15px; color: #38bdf8; margin-bottom: 8px; font-weight: 600; }
+    .metric { display: flex; justify-content: space-between; margin: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.06); padding-bottom: 3px; }
+    .metric span.val { font-family: 'JetBrains Mono', monospace; color: #f8fafc; font-weight: 600; }
+    .legend { margin-top: 10px; display: flex; flex-direction: column; gap: 5px; font-size: 12px; }
+    .legend-item { display: flex; align-items: center; gap: 8px; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  </style>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+      "lil-gui": "https://unpkg.com/lil-gui@0.19.1/dist/lil-gui.esm.min.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="hud">
+    <h2>43. Rutherford Alpha Scattering (3D)</h2>
+    <div class="metric"><span>Target Atomic Number (Z):</span><span class="val" id="m-z">79 (Au)</span></div>
+    <div class="metric"><span>Beam Kinetic Energy (E₀):</span><span class="val" id="m-energy">5.50 MeV</span></div>
+    <div class="metric"><span>Probe Impact Param (b):</span><span class="val" id="m-impact">1.20 fm</span></div>
+    <div class="metric"><span>Closest Approach (r_min):</span><span class="val" id="m-rmin">2.45 fm</span></div>
+    <div class="metric"><span>Scattering Angle (θ):</span><span class="val" id="m-angle">58.4°</span></div>
+    <div class="metric"><span>Total Energy Drift (ΔE/E₀):</span><span class="val" id="m-drift">0.000%</span></div>
+    <div class="legend">
+      <div class="legend-item"><span class="dot" style="background:#facc15"></span>Gold Nucleus (+Ze) & Coulomb Potential Shell</div>
+      <div class="legend-item"><span class="dot" style="background:#38bdf8"></span>Alpha Particle (He²⁺) Velocity Vector v</div>
+      <div class="legend-item"><span class="dot" style="background:#ef4444"></span>Coulomb Repulsion Force Vector F_C (1/r²)</div>
+      <div class="legend-item"><span class="dot" style="background:#a855f7"></span>3D Hyperbolic Scattering Trajectories</div>
+    </div>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import GUI from 'lil-gui';
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x070b14);
+    scene.fog = new THREE.FogExp2(0x070b14, 0.02);
+
+    const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 200);
+    camera.position.set(-4, 9, 17);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    document.body.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+
+    // Lighting
+    scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+    const pointLight = new THREE.PointLight(0xfacc15, 2.5, 40);
+    scene.add(pointLight);
+    const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    dirLight.position.set(10, 20, 15);
+    scene.add(dirLight);
+
+    const grid = new THREE.GridHelper(32, 32, 0x1e293b, 0x0f172a);
+    grid.position.y = -5;
+    scene.add(grid);
+
+    // Gold Nucleus at Origin (Cluster of protons/neutrons + glowing core)
+    const nucleusGroup = new THREE.Group();
+    scene.add(nucleusGroup);
+
+    const coreMesh = new THREE.Mesh(
+      new THREE.SphereGeometry(0.55, 32, 32),
+      new THREE.MeshStandardMaterial({ color: 0xfacc15, emissive: 0xd97706, roughness: 0.2, metalness: 0.7 })
+    );
+    nucleusGroup.add(coreMesh);
+
+    // Equipotential shells around nucleus
+    const shell1 = new THREE.Mesh(
+      new THREE.SphereGeometry(1.5, 24, 24),
+      new THREE.MeshBasicMaterial({ color: 0xf59e0b, wireframe: true, transparent: true, opacity: 0.18 })
+    );
+    const shell2 = new THREE.Mesh(
+      new THREE.SphereGeometry(3.0, 24, 24),
+      new THREE.MeshBasicMaterial({ color: 0xf59e0b, wireframe: true, transparent: true, opacity: 0.08 })
+    );
+    nucleusGroup.add(shell1, shell2);
+
+    // Simulation Parameters
+    const params = {
+      atomicZ: 79,          // Gold Z=79
+      beamEnergy: 5.5,      // MeV
+      probeImpactB: 1.2,    // impact parameter b (fm)
+      numRings: 2,          // 3D cylindrical beam rings
+      paused: false,
+      reset: () => {
+        initParticles();
+      }
+    };
+
+    // Alpha Particle Ensemble (1 primary probe particle + cylindrical ring particles)
+    const particles = [];
+    const maxTrailLen = 110;
+
+    function computeAcceleration(pos, kCoulomb) {
+      const r2 = pos.lengthSq();
+      // Mandatory singularity softening Math.max(1.5, r * r)
+      const r2Soft = Math.max(1.5, r2);
+      const r = Math.sqrt(r2);
+      const dir = r > 1e-6 ? pos.clone().divideScalar(r) : new THREE.Vector3(-1, 0, 0);
+      return dir.multiplyScalar(kCoulomb / r2Soft);
+    }
+
+    function computePotentialEnergy(pos, kCoulomb) {
+      const r2Soft = Math.max(1.5, pos.lengthSq());
+      return kCoulomb / Math.sqrt(r2Soft);
+    }
+
+    function createAlphaParticle(bRadius, phiAngle, isProbe = false) {
+      const mesh = new THREE.Mesh(
+        new THREE.SphereGeometry(isProbe ? 0.24 : 0.14, 16, 16),
+        new THREE.MeshStandardMaterial({
+          color: isProbe ? 0x38bdf8 : 0xc084fc,
+          emissive: isProbe ? 0x0284c7 : 0x7e22ce
+        })
+      );
+      scene.add(mesh);
+
+      const velArrow = new THREE.ArrowHelper(
+        new THREE.Vector3(1, 0, 0),
+        new THREE.Vector3(),
+        1.0,
+        0x38bdf8,
+        0.25,
+        0.15
+      );
+      const forceArrow = new THREE.ArrowHelper(
+        new THREE.Vector3(-1, 0, 0),
+        new THREE.Vector3(),
+        1.0,
+        0xef4444,
+        0.25,
+        0.15
+      );
+      velArrow.visible = isProbe;
+      forceArrow.visible = isProbe;
+      scene.add(velArrow, forceArrow);
+
+      const trailPositions = new Float32Array(maxTrailLen * 3);
+      const trailGeo = new THREE.BufferGeometry();
+      trailGeo.setAttribute('position', new THREE.BufferAttribute(trailPositions, 3));
+      const trailMat = new THREE.LineBasicMaterial({
+        color: isProbe ? 0x38bdf8 : 0xa855f7,
+        transparent: true,
+        opacity: isProbe ? 0.95 : 0.45
+      });
+      const trailLine = new THREE.Line(trailGeo, trailMat);
+      scene.add(trailLine);
+
+      return {
+        isProbe,
+        bRadius,
+        phiAngle,
+        pos: new THREE.Vector3(),
+        vel: new THREE.Vector3(),
+        acc: new THREE.Vector3(),
+        mesh,
+        velArrow,
+        forceArrow,
+        trailGeo,
+        trailPositions,
+        trailLine,
+        history: [],
+        initialEnergy: 1.0,
+        minR: 999
+      };
+    }
+
+    function resetSingleParticle(p, xOffset = -12.0) {
+      const kCoulomb = params.atomicZ * 0.32;
+      const v0 = Math.sqrt(params.beamEnergy * 3.6);
+      const b = p.isProbe ? params.probeImpactB : p.bRadius;
+      const y = b * Math.cos(p.phiAngle);
+      const z = b * Math.sin(p.phiAngle);
+
+      p.pos.set(xOffset, y, z);
+      p.vel.set(v0, 0, 0);
+      p.acc.copy(computeAcceleration(p.pos, kCoulomb));
+      p.history.length = 0;
+      p.minR = p.pos.length();
+      p.initialEnergy = 0.5 * p.vel.lengthSq() + computePotentialEnergy(p.pos, kCoulomb);
+    }
+
+    function initParticles() {
+      // Clear old meshes if any
+      while (particles.length > 0) {
+        const p = particles.pop();
+        scene.remove(p.mesh, p.velArrow, p.forceArrow, p.trailLine);
+      }
+
+      // 1. Primary Probe Alpha Particle (in XY plane, phi = 0)
+      const probe = createAlphaParticle(params.probeImpactB, 0, true);
+      resetSingleParticle(probe, -12.0);
+      particles.push(probe);
+
+      // 2. 3D Cylindrical Rings of Alpha Particles around beam axis
+      const impactRadii = [0.55, 1.35, 2.4];
+      const countPerRing = 6;
+      for (let rIdx = 0; rIdx < impactRadii.length; rIdx++) {
+        const b = impactRadii[rIdx];
+        for (let j = 0; j < countPerRing; j++) {
+          const phi = (j / countPerRing) * Math.PI * 2 + rIdx * 0.3;
+          const p = createAlphaParticle(b, phi, false);
+          const staggerX = -12.0 - ((rIdx * 2.2 + j * 0.9) % 6.0);
+          resetSingleParticle(p, staggerX);
+          particles.push(p);
+        }
+      }
+    }
+
+    initParticles();
+
+    const gui = new GUI({ title: 'Rutherford Scattering Controls' });
+    gui.add(params, 'atomicZ', 20, 100, 1).name('Target Z (Nucleus)').onChange(() => initParticles());
+    gui.add(params, 'beamEnergy', 2.0, 10.0, 0.2).name('Alpha Energy (MeV)').onChange(() => initParticles());
+    gui.add(params, 'probeImpactB', 0.0, 4.0, 0.05).name('Probe Impact b (fm)').onChange(() => {
+      resetSingleParticle(particles[0], -12.0);
+    });
+    gui.add(params, 'paused').name('Pause Simulation');
+    gui.add(params, 'reset').name('Respawn Alpha Beam');
+
+    // HUD Elements
+    const elZ = document.getElementById('m-z');
+    const elEnergy = document.getElementById('m-energy');
+    const elImpact = document.getElementById('m-impact');
+    const elRmin = document.getElementById('m-rmin');
+    const elAngle = document.getElementById('m-angle');
+    const elDrift = document.getElementById('m-drift');
+
+    let lastFrameTime = performance.now();
+    let frameCount = 0;
+    let currentFps = 60;
+    let energyBounded = true;
+    const runtimeErrors = [];
+    window.addEventListener('error', (e) => runtimeErrors.push(e.message));
+
+    function stepPhysicsVerlet(dt) {
+      if (params.paused) return;
+
+      const kCoulomb = params.atomicZ * 0.32;
+      const subSteps = 6;
+      const h = dt / subSteps;
+
+      for (const p of particles) {
+        for (let s = 0; s < subSteps; s++) {
+          // Velocity-Verlet Step 1: r(t+h) = r(t) + v(t)*h + 0.5*a(t)*h^2
+          p.pos.addScaledVector(p.vel, h).addScaledVector(p.acc, 0.5 * h * h);
+
+          // Step 2: compute new acceleration a(t+h) with softening Math.max(1.5, r*r)
+          const newAcc = computeAcceleration(p.pos, kCoulomb);
+
+          // Step 3: v(t+h) = v(t) + 0.5*(a(t) + a(t+h))*h
+          p.vel.addScaledVector(p.acc.add(newAcc), 0.5 * h);
+          p.acc.copy(newAcc);
+
+          const dist = p.pos.length();
+          if (dist < p.minR) p.minR = dist;
+        }
+
+        // Respawn particle if it exits boundary
+        if (p.pos.length() > 15.5 && p.pos.dot(p.vel) > 0) {
+          resetSingleParticle(p, -12.0);
+        }
+
+        p.mesh.position.copy(p.pos);
+
+        // Update trail buffer
+        p.history.push(p.pos.clone());
+        if (p.history.length > maxTrailLen) p.history.shift();
+        for (let i = 0; i < maxTrailLen; i++) {
+          const pt = p.history[Math.min(i, p.history.length - 1)];
+          p.trailPositions[i * 3] = pt.x;
+          p.trailPositions[i * 3 + 1] = pt.y;
+          p.trailPositions[i * 3 + 2] = pt.z;
+        }
+        p.trailGeo.attributes.position.needsUpdate = true;
+
+        // Update Probe Vector Arrows & HUD metrics
+        if (p.isProbe) {
+          const speed = p.vel.length();
+          if (speed > 0.05) {
+            p.velArrow.position.copy(p.pos);
+            p.velArrow.setDirection(p.vel.clone().normalize());
+            p.velArrow.setLength(Math.min(2.2, speed * 0.35), 0.3, 0.18);
+          }
+          const fMag = p.acc.length();
+          if (fMag > 0.05) {
+            p.forceArrow.position.copy(p.pos);
+            p.forceArrow.setDirection(p.acc.clone().normalize());
+            p.forceArrow.setLength(Math.min(2.8, fMag * 0.25), 0.3, 0.18);
+          }
+
+          // Compute live energy conservation & scattering angle
+          const curEnergy = 0.5 * p.vel.lengthSq() + computePotentialEnergy(p.pos, kCoulomb);
+          const relDrift = Math.abs(curEnergy - p.initialEnergy) / Math.max(1e-5, p.initialEnergy);
+          energyBounded = relDrift < 0.05;
+
+          const cosTheta = THREE.MathUtils.clamp(p.vel.x / Math.max(1e-5, speed), -1, 1);
+          const angleDeg = (Math.acos(cosTheta) * 180) / Math.PI;
+
+          elZ.textContent = `${params.atomicZ}`;
+          elEnergy.textContent = `${params.beamEnergy.toFixed(2)} MeV`;
+          elImpact.textContent = `${params.probeImpactB.toFixed(2)} fm`;
+          elRmin.textContent = `${p.minR.toFixed(2)} fm`;
+          elAngle.textContent = `${angleDeg.toFixed(1)}°`;
+          elDrift.textContent = `${(relDrift * 100).toFixed(3)}%`;
+        }
+      }
+
+      // Scale nucleus visual slightly with Z
+      const zScale = 0.7 + (params.atomicZ / 79) * 0.3;
+      coreMesh.scale.setScalar(zScale);
+    }
+
+    function animate(now) {
+      requestAnimationFrame(animate);
+      const dt = Math.min((now - lastFrameTime) / 1000, 0.04);
+      lastFrameTime = now;
+      frameCount++;
+
+      stepPhysicsVerlet(dt);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+    requestAnimationFrame(animate);
+
+    // 1-second Telemetry Heartbeat
+    setInterval(() => {
+      currentFps = frameCount;
+      frameCount = 0;
+      const probePos = particles[0] ? particles[0].pos : new THREE.Vector3();
+      const hasNaN = Number.isNaN(probePos.x) || Number.isNaN(probePos.y) || Number.isNaN(probePos.z);
+      window.parent.postMessage({
+        type: 'physicraft_telemetry',
+        fps: currentFps,
+        hasNaN: hasNaN,
+        errors: runtimeErrors,
+        energyBounded: energyBounded
+      }, '*');
+    }, 1000);
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>

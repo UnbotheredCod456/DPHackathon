@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>28. Snell's Law, TIR & 3D Cylindrical Optical Fiber</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #070b14;
+      color: #e2e8f0;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      overflow: hidden;
+      user-select: none;
+    }
+    #canvas-container { width: 100vw; height: 100vh; }
+    #hud {
+      position: fixed;
+      bottom: 20px;
+      left: 20px;
+      background: rgba(15, 23, 42, 0.88);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(56, 189, 248, 0.28);
+      border-radius: 12px;
+      padding: 16px 20px;
+      min-width: 330px;
+      max-width: 400px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+      z-index: 10;
+    }
+    #hud h2 {
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: #38bdf8;
+      margin-bottom: 10px;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+      padding-bottom: 6px;
+    }
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12.5px;
+      margin: 5px 0;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .stat-label { color: #94a3b8; }
+    .stat-val { color: #f8fafc; font-weight: 600; }
+    .legend {
+      margin-top: 10px;
+      padding-top: 8px;
+      border-top: 1px solid rgba(148, 163, 184, 0.18);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      font-size: 11.5px;
+    }
+    .legend-item { display: flex; align-items: center; gap: 8px; color: #cbd5e1; }
+    .swatch { width: 12px; height: 4px; border-radius: 2px; }
+  </style>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+      "lil-gui": "https://unpkg.com/lil-gui@0.19.1/dist/lil-gui.esm.min.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="canvas-container"></div>
+  <div id="hud">
+    <h2>28. Snell's Law &amp; Optical Fiber TIR</h2>
+    <div class="stat-row"><span class="stat-label">Core / Cladding (n₁ / n₂):</span><span class="stat-val" id="val-n">1.52 / 1.25</span></div>
+    <div class="stat-row"><span class="stat-label">Numerical Aperture (NA):</span><span class="stat-val" id="val-na">0.865</span></div>
+    <div class="stat-row"><span class="stat-label">Critical Angle (θ_c):</span><span class="stat-val" id="val-tc">55.3°</span></div>
+    <div class="stat-row"><span class="stat-label">Wall Incidence (θ_i):</span><span class="stat-val" id="val-ti">71.2°</span></div>
+    <div class="stat-row"><span class="stat-label">Propagation Regime:</span><span class="stat-val" id="val-regime">Total Internal Reflection</span></div>
+    <div class="stat-row"><span class="stat-label">Guided Power Retained:</span><span class="stat-val" id="val-power">100.0%</span></div>
+    <div class="legend">
+      <div class="legend-item"><span class="swatch" style="background:#38bdf8"></span>Guided Laser Ray &amp; Photon Pulses</div>
+      <div class="legend-item"><span class="swatch" style="background:#f59e0b"></span>Surface Normals at Bounce Vertices</div>
+      <div class="legend-item"><span class="swatch" style="background:#f43f5e"></span>Refracted Leaky Rays (when θ_i &lt; θ_c)</div>
+      <div class="legend-item"><span class="swatch" style="background:#22c55e"></span>Acceptance Cone Boundary (NA)</div>
+    </div>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import GUI from 'lil-gui';
+
+    const container = document.getElementById('canvas-container');
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x070b14);
+    scene.fog = new THREE.FogExp2(0x070b14, 0.015);
+
+    const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 200);
+    camera.position.set(0, 6.5, 21);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    container.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.06;
+
+    scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+    const dirLight = new THREE.DirectionalLight(0x93c5fd, 1.3);
+    dirLight.position.set(8, 15, 12);
+    scene.add(dirLight);
+
+    const grid = new THREE.GridHelper(34, 34, 0x1e293b, 0x0f172a);
+    grid.position.y = -4.2;
+    scene.add(grid);
+
+    const params = {
+      nCore: 1.52,
+      nCladding: 1.25,
+      launchAngleDeg: 22.0,
+      skewOffsetZ: 0.0, // >0 produces 3D helical skew ray inside cylindrical fiber
+      fiberRadius: 1.8,
+      pulseSpeed: 6.0,
+      paused: false,
+      reset() {
+        this.nCore = 1.52;
+        this.nCladding = 1.25;
+        this.launchAngleDeg = 22.0;
+        this.skewOffsetZ = 0.0;
+        this.fiberRadius = 1.8;
+        this.pulseSpeed = 6.0;
+        this.paused = false;
+        gui.controllersRecursive().forEach(c => c.updateDisplay());
+      }
+    };
+
+    const gui = new GUI({ title: 'Optical Fiber & Snell Law' });
+    gui.add(params, 'nCore', 1.30, 2.20, 0.01).name('Core Index (n₁)');
+    gui.add(params, 'nCladding', 1.00, 1.80, 0.01).name('Cladding Index (n₂)');
+    gui.add(params, 'launchAngleDeg', 2.0, 65.0, 0.5).name('Launch Angle θ₀ (°)');
+    gui.add(params, 'skewOffsetZ', 0.0, 0.75, 0.05).name('3D Skew Helicity');
+    gui.add(params, 'fiberRadius', 1.0, 2.6, 0.1).name('Core Radius R');
+    gui.add(params, 'pulseSpeed', 1.0, 12.0, 0.5).name('Photon Speed');
+    gui.add(params, 'paused').name('Pause');
+    gui.add(params, 'reset').name('Reset');
+
+    const fiberLength = 18.0;
+    const fiberStartX = -9.0;
+    const fiberEndX = 9.0;
+
+    // Cylindrical Core & Cladding Meshes
+    const coreGeo = new THREE.CylinderGeometry(1, 1, fiberLength, 40, 1, true);
+    coreGeo.rotateZ(Math.PI / 2);
+    const coreMat = new THREE.MeshPhysicalMaterial({
+      color: 0x38bdf8,
+      transparent: true,
+      opacity: 0.22,
+      roughness: 0.1,
+      metalness: 0.05,
+      side: THREE.DoubleSide,
+      depthWrite: false
+    });
+    const coreMesh = new THREE.Mesh(coreGeo, coreMat);
+    scene.add(coreMesh);
+
+    const cladGeo = new THREE.CylinderGeometry(1.32, 1.32, fiberLength, 40, 1, true);
+    cladGeo.rotateZ(Math.PI / 2);
+    const cladMat = new THREE.MeshPhysicalMaterial({
+      color: 0x64748b,
+      transparent: true,
+      opacity: 0.11,
+      roughness: 0.2,
+      side: THREE.DoubleSide,
+      depthWrite: false
+    });
+    const cladMesh = new THREE.Mesh(cladGeo, cladMat);
+    scene.add(cladMesh);
+
+    // Acceptance cone visual at fiber entrance
+    const coneGeo = new THREE.ConeGeometry(1, 3.0, 32, 1, true);
+    coneGeo.translate(0, -1.5, 0);
+    coneGeo.rotateZ(-Math.PI / 2);
+    const coneMat = new THREE.MeshBasicMaterial({
+      color: 0x22c55e,
+      transparent: true,
+      opacity: 0.14,
+      wireframe: true
+    });
+    const acceptanceCone = new THREE.Mesh(coneGeo, coneMat);
+    acceptanceCone.position.set(fiberStartX, 0, 0);
+    scene.add(acceptanceCone);
+
+    // Guided ray polyline
+    const maxBounces = 24;
+    const rayPtsArray = new Float32Array((maxBounces + 3) * 3);
+    const rayGeo = new THREE.BufferGeometry();
+    rayGeo.setAttribute('position', new THREE.BufferAttribute(rayPtsArray, 3));
+    const guidedLine = new THREE.Line(
+      rayGeo,
+      new THREE.LineBasicMaterial({ color: 0x38bdf8, linewidth: 2 })
+    );
+    scene.add(guidedLine);
+
+    // Normal arrows and Leaky refracted arrows at bounce vertices
+    const normalArrows = [];
+    const leakyArrows = [];
+    for (let i = 0; i < maxBounces; i++) {
+      const nArr = new THREE.ArrowHelper(new THREE.Vector3(0, -1, 0), new THREE.Vector3(), 1.0, 0xf59e0b, 0.22, 0.12);
+      const lArr = new THREE.ArrowHelper(new THREE.Vector3(1, 1, 0), new THREE.Vector3(), 2.2, 0xf43f5e, 0.28, 0.15);
+      scene.add(nArr, lArr);
+      normalArrows.push(nArr);
+      leakyArrows.push(lArr);
+    }
+
+    // Photon pulse spheres traveling along the guided ray
+    const numPulses = 8;
+    const pulses = [];
+    const pulseGeo = new THREE.SphereGeometry(0.14, 16, 16);
+    for (let i = 0; i < numPulses; i++) {
+      const pMesh = new THREE.Mesh(pulseGeo, new THREE.MeshBasicMaterial({ color: 0x7dd3fc }));
+      scene.add(pMesh);
+      pulses.push(pMesh);
+    }
+
+    const elN = document.getElementById('val-n');
+    const elNA = document.getElementById('val-na');
+    const elTc = document.getElementById('val-tc');
+    const elTi = document.getElementById('val-ti');
+    const elRegime = document.getElementById('val-regime');
+    const elPower = document.getElementById('val-power');
+
+    let simTime = 0;
+    let lastTime = performance.now();
+    let frameCount = 0;
+    let hasNaN = false;
+
+    function updateFiber(dt) {
+      if (!params.paused) {
+        simTime += dt * params.pulseSpeed;
+      }
+
+      const R = params.fiberRadius;
+      coreMesh.scale.set(1, R, R);
+      cladMesh.scale.set(1, R, R);
+
+      const n1 = params.nCore;
+      const n2 = params.nCladding;
+      const n0 = 1.0; // outside air
+
+      // Numerical Aperture and Critical Angle
+      const naSq = n1 * n1 - n2 * n2;
+      const NA = naSq > 0 ? Math.sqrt(naSq) : 0;
+      const hasCritical = n1 > n2;
+      const sinTc = hasCritical ? n2 / n1 : 1.0;
+      const thetaCritRad = hasCritical ? Math.asin(Math.min(1, sinTc)) : Math.PI / 2;
+
+      // Update Acceptance Cone
+      if (NA > 0.02) {
+        acceptanceCone.visible = true;
+        const maxAcceptRad = Math.asin(Math.min(0.96, NA / n0));
+        const coneR = 3.0 * Math.tan(maxAcceptRad);
+        acceptanceCone.scale.set(1, coneR, coneR);
+      } else {
+        acceptanceCone.visible = false;
+      }
+
+      // Launch ray from outside air into fiber face at x = fiberStartX
+      const theta0 = THREE.MathUtils.degToRad(params.launchAngleDeg);
+      const zLaunch = params.skewOffsetZ * R;
+      const entryPt = new THREE.Vector3(fiberStartX, 0, zLaunch);
+      const sourcePt = new THREE.Vector3(
+        fiberStartX - 3.2 * Math.cos(theta0),
+        -3.2 * Math.sin(theta0),
+        zLaunch
+      );
+
+      // Snell's Law at entrance face (normal = (-1, 0, 0))
+      const sinThetar = (n0 / n1) * Math.sin(theta0);
+      const thetaRefracted = Math.asin(Math.min(0.999, sinThetar));
+
+      let dir = new THREE.Vector3(Math.cos(thetaRefracted), Math.sin(thetaRefracted), 0).normalize();
+      let curPos = entryPt.clone();
+
+      const vertices = [sourcePt, entryPt];
+      let firstIncidenceRad = Math.PI / 2 - thetaRefracted;
+      let isTIR = true;
+      let bounceIdx = 0;
+
+      normalArrows.forEach(a => (a.visible = false));
+      leakyArrows.forEach(a => (a.visible = false));
+
+      // Trace 3D ray inside cylinder y^2 + z^2 = R^2
+      while (curPos.x < fiberEndX && bounceIdx < maxBounces) {
+        // Solve intersection with cylinder wall in (y, z):
+        // (y0 + t*dy)^2 + (z0 + t*dz)^2 = R^2
+        const a = dir.y * dir.y + dir.z * dir.z;
+        const b = 2 * (curPos.y * dir.y + curPos.z * dir.z);
+        const c = curPos.y * curPos.y + curPos.z * curPos.z - R * R;
+
+        let tWall = 1000;
+        if (a > 1e-6) {
+          const disc = Math.max(0, b * b - 4 * a * c);
+          tWall = (-b + Math.sqrt(disc)) / (2 * a);
+        }
+
+        const tExit = (fiberEndX - curPos.x) / Math.max(1e-4, dir.x);
+
+        if (tExit <= tWall) {
+          // Ray exits right end of fiber
+          const exitPt = curPos.clone().addScaledVector(dir, tExit);
+          vertices.push(exitPt);
+          // Outgoing refracted ray into air
+          const outDir = new THREE.Vector3(Math.cos(theta0), Math.sign(dir.y) * Math.sin(theta0), dir.z).normalize();
+          vertices.push(exitPt.clone().addScaledVector(outDir, 3.2));
+          break;
+        }
+
+        const hitPt = curPos.clone().addScaledVector(dir, tWall);
+        vertices.push(hitPt);
+
+        // Inward normal at cylinder wall
+        const inwardNormal = new THREE.Vector3(0, -hitPt.y, -hitPt.z).normalize();
+        const cosInc = Math.min(1, Math.abs(dir.dot(inwardNormal)));
+        const thetaInc = Math.acos(cosInc);
+        if (bounceIdx === 0) firstIncidenceRad = thetaInc;
+
+        // Show inward surface normal arrow
+        const nArrow = normalArrows[bounceIdx];
+        nArrow.visible = true;
+        nArrow.position.copy(hitPt);
+        nArrow.setDirection(inwardNormal);
+        nArrow.setLength(R * 0.55, 0.2, 0.12);
+
+        // Check Total Internal Reflection condition: n1 * sin(thetaInc) >= n2
+        const sinTrans = (n1 / n2) * Math.sin(thetaInc);
+        if (sinTrans < 1.0) {
+          isTIR = false;
+          // Show refracted leaky ray escaping into cladding
+          const outwardNormal = inwardNormal.clone().negate();
+          const cosT = Math.sqrt(Math.max(0, 1 - sinTrans * sinTrans));
+          const ratio = n1 / n2;
+          const refrDir = dir.clone().multiplyScalar(ratio)
+            .addScaledVector(outwardNormal, cosT - ratio * cosInc)
+            .normalize();
+          const lArrow = leakyArrows[bounceIdx];
+          lArrow.visible = true;
+          lArrow.position.copy(hitPt);
+          lArrow.setDirection(refrDir);
+          lArrow.setLength(2.2, 0.28, 0.15);
+        }
+
+        // Specular reflection off cylindrical wall: r = d - 2(d . n)n
+        const dotDN = dir.dot(inwardNormal);
+        dir.addScaledVector(inwardNormal, -2 * dotDN).normalize();
+        curPos = hitPt;
+        bounceIdx++;
+      }
+
+      // Write vertices to BufferGeometry
+      guidedLine.geometry.setDrawRange(0, vertices.length);
+      for (let i = 0; i < vertices.length; i++) {
+        rayPtsArray[i * 3] = vertices[i].x;
+        rayPtsArray[i * 3 + 1] = vertices[i].y;
+        rayPtsArray[i * 3 + 2] = vertices[i].z;
+      }
+      guidedLine.geometry.attributes.position.needsUpdate = true;
+      guidedLine.material.color.setHex(isTIR ? 0x38bdf8 : 0xf43f5e);
+
+      // Compute cumulative path length and animate photon pulses
+      const segLengths = [];
+      let totalLen = 0;
+      for (let i = 0; i < vertices.length - 1; i++) {
+        const d = vertices[i].distanceTo(vertices[i + 1]);
+        segLengths.push(d);
+        totalLen += d;
+      }
+
+      for (let p = 0; p < numPulses; p++) {
+        const dist = ((simTime + (p / numPulses) * totalLen) % totalLen + totalLen) % totalLen;
+        let accum = 0;
+        for (let s = 0; s < segLengths.length; s++) {
+          if (accum + segLengths[s] >= dist || s === segLengths.length - 1) {
+            const frac = (dist - accum) / Math.max(1e-4, segLengths[s]);
+            pulses[p].position.lerpVectors(vertices[s], vertices[s + 1], frac);
+            break;
+          }
+          accum += segLengths[s];
+        }
+      }
+
+      // Compute Fresnel power retention if leaky
+      let retainedPct = 100.0;
+      if (!isTIR) {
+        retainedPct = Math.max(2.0, Math.pow(0.45, bounceIdx) * 100);
+      }
+
+      if (Number.isNaN(firstIncidenceRad)) hasNaN = true;
+
+      // Update HUD
+      elN.textContent = `${n1.toFixed(2)} / ${n2.toFixed(2)}`;
+      elNA.textContent = NA > 0 ? NA.toFixed(3) : '0.000 (Unbound)';
+      elTc.textContent = hasCritical ? `${THREE.MathUtils.radToDeg(thetaCritRad).toFixed(1)}°` : 'None (n₁ ≤ n₂)';
+      elTi.textContent = `${THREE.MathUtils.radToDeg(firstIncidenceRad).toFixed(1)}°`;
+      elRegime.textContent = isTIR ? 'Total Internal Reflection' : 'Partial Refraction (Leaky)';
+      elRegime.style.color = isTIR ? '#38bdf8' : '#f43f5e';
+      elPower.textContent = `${retainedPct.toFixed(1)}%`;
+    }
+
+    function animate(now) {
+      requestAnimationFrame(animate);
+      const dt = Math.min((now - lastTime) / 1000, 0.05);
+      lastTime = now;
+      frameCount++;
+
+      updateFiber(dt);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+    requestAnimationFrame(animate);
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    setInterval(() => {
+      const fps = frameCount || 60;
+      frameCount = 0;
+      window.parent.postMessage({
+        type: 'physicraft_telemetry',
+        fps,
+        hasNaN,
+        errors: [],
+        energyBounded: true
+      }, '*');
+    }, 1000);
+  </script>
+</body>
+</html>

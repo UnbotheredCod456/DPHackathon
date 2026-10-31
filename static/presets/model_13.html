@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>13. Coupled Pendulums: Normal Modes and Beat Energy Exchange</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+    body {
+      background: #070b14;
+      color: #f1f5f9;
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Inter', sans-serif;
+      overflow: hidden;
+    }
+    canvas { display: block; width: 100vw; height: 100vh; }
+    #hud {
+      position: absolute;
+      bottom: 20px;
+      left: 20px;
+      background: rgba(11, 18, 32, 0.84);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(148, 163, 184, 0.2);
+      border-radius: 14px;
+      padding: 14px 18px;
+      min-width: 335px;
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+      font-size: 12px;
+      line-height: 1.6;
+      z-index: 10;
+    }
+    #hud h3 {
+      font-size: 13px;
+      font-weight: 600;
+      color: #38bdf8;
+      margin-bottom: 8px;
+      letter-spacing: 0.02em;
+    }
+    .row {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      color: #94a3b8;
+    }
+    .val {
+      font-family: ui-monospace, 'SFMono-Regular', Menlo, monospace;
+      color: #f8fafc;
+      font-weight: 600;
+    }
+    .legend {
+      margin-top: 10px;
+      padding-top: 8px;
+      border-top: 1px solid rgba(148, 163, 184, 0.15);
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      font-size: 11px;
+      color: #cbd5e1;
+    }
+    .swatch {
+      display: inline-block;
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      margin-right: 5px;
+      vertical-align: middle;
+    }
+  </style>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+      "lil-gui": "https://unpkg.com/lil-gui@0.19.1/dist/lil-gui.esm.min.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="hud">
+    <h3>13. Coupled Pendulums: Normal Modes &amp; Beats</h3>
+    <div class="row"><span>Angles (&theta;<sub>1</sub>, &theta;<sub>2</sub>):</span><span class="val" id="hud-th">0.0&deg;, 0.0&deg;</span></div>
+    <div class="row"><span>Normal Modes (&omega;<sub>+</sub>, &omega;<sub>&minus;</sub>):</span><span class="val" id="hud-modes">0.00, 0.00 rad/s</span></div>
+    <div class="row"><span>Beat Frequency &omega;<sub>beat</sub>:</span><span class="val" id="hud-beat">0.00 rad/s</span></div>
+    <div class="row"><span>Energies (E<sub>1</sub>, E<sub>2</sub>):</span><span class="val" id="hud-e12">0.00 J, 0.00 J</span></div>
+    <div class="row"><span>Total Conserved Energy E<sub>tot</sub>:</span><span class="val" id="hud-etot">0.00 J</span></div>
+    <div class="legend">
+      <span><i class="swatch" style="background:#38bdf8"></i>Pendulum 1</span>
+      <span><i class="swatch" style="background:#f43f5e"></i>Pendulum 2</span>
+      <span><i class="swatch" style="background:#22c55e"></i>Velocity v&#8407;</span>
+      <span><i class="swatch" style="background:#f59e0b"></i>Coupling Force F&#8407;<sub>c</sub></span>
+    </div>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import GUI from 'lil-gui';
+
+    const runtimeErrors = [];
+    window.addEventListener('error', (e) => runtimeErrors.push(e.message));
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x070b14);
+
+    const camera = new THREE.PerspectiveCamera(48, window.innerWidth / window.innerHeight, 0.1, 200);
+    camera.position.set(0, 2.5, 16.0);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    document.body.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.06;
+
+    scene.add(new THREE.AmbientLight(0xffffff, 0.65));
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.1);
+    dirLight.position.set(8, 16, 12);
+    scene.add(dirLight);
+
+    const grid = new THREE.GridHelper(28, 28, 0x1e293b, 0x0f172a);
+    grid.position.y = -4.2;
+    scene.add(grid);
+
+    // Top Support Bar
+    const pivotY = 4.2;
+    const sep = 5.4;
+    const pivot1 = new THREE.Vector3(-sep / 2, pivotY, 0);
+    const pivot2 = new THREE.Vector3(sep / 2, pivotY, 0);
+
+    const beamMesh = new THREE.Mesh(
+      new THREE.BoxGeometry(10.5, 0.28, 0.7),
+      new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.6, roughness: 0.35 })
+    );
+    beamMesh.position.set(0, pivotY + 0.14, 0);
+    scene.add(beamMesh);
+
+    const rod1Geo = new THREE.BufferGeometry().setFromPoints([pivot1, new THREE.Vector3()]);
+    const rod2Geo = new THREE.BufferGeometry().setFromPoints([pivot2, new THREE.Vector3()]);
+    const rodMat = new THREE.LineBasicMaterial({ color: 0xcbdaed });
+    scene.add(new THREE.Line(rod1Geo, rodMat), new THREE.Line(rod2Geo, rodMat));
+
+    const bob1 = new THREE.Mesh(
+      new THREE.SphereGeometry(0.52, 32, 32),
+      new THREE.MeshStandardMaterial({ color: 0x38bdf8, emissive: 0x0284c7, emissiveIntensity: 0.4, roughness: 0.25 })
+    );
+    const bob2 = new THREE.Mesh(
+      new THREE.SphereGeometry(0.52, 32, 32),
+      new THREE.MeshStandardMaterial({ color: 0xf43f5e, emissive: 0xe11d48, emissiveIntensity: 0.4, roughness: 0.25 })
+    );
+    scene.add(bob1, bob2);
+
+    // Helical coupling spring connecting the two rods/bobs
+    const springPts = 140;
+    const springArr = new Float32Array(springPts * 3);
+    const springGeo = new THREE.BufferGeometry();
+    springGeo.setAttribute('position', new THREE.BufferAttribute(springArr, 3));
+    const springLine = new THREE.Line(springGeo, new THREE.LineBasicMaterial({ color: 0xf59e0b }));
+    scene.add(springLine);
+
+    // Dynamic Velocity and Coupling Force Arrows
+    const velArrow1 = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(), 1, 0x22c55e, 0.3, 0.18);
+    const velArrow2 = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(), 1, 0x22c55e, 0.3, 0.18);
+    const forceArrow1 = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(), 1, 0xf59e0b, 0.3, 0.18);
+    const forceArrow2 = new THREE.ArrowHelper(new THREE.Vector3(-1, 0, 0), new THREE.Vector3(), 1, 0xf59e0b, 0.3, 0.18);
+    scene.add(velArrow1, velArrow2, forceArrow1, forceArrow2);
+
+    // 3D Energy Exchange Bars in the background
+    const eBar1 = new THREE.Mesh(
+      new THREE.BoxGeometry(0.7, 1, 0.4),
+      new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.7 })
+    );
+    const eBar2 = new THREE.Mesh(
+      new THREE.BoxGeometry(0.7, 1, 0.4),
+      new THREE.MeshBasicMaterial({ color: 0xf43f5e, transparent: true, opacity: 0.7 })
+    );
+    scene.add(eBar1, eBar2);
+
+    const params = {
+      kc: 2.2,
+      m: 1.5,
+      L: 5.0,
+      g: 9.81,
+      th1Deg: 28,
+      th2Deg: 0,
+      modePreset: 'Beat Exchange',
+      paused: false,
+      reset() { applyPreset(params.modePreset); }
+    };
+
+    // State: [th1, w1, th2, w2]
+    let state = [0, 0, 0, 0];
+
+    function applyPreset(mode) {
+      params.modePreset = mode;
+      if (mode === 'Beat Exchange') {
+        params.th1Deg = 28;
+        params.th2Deg = 0;
+      } else if (mode === 'Symmetric (+)') {
+        params.th1Deg = 24;
+        params.th2Deg = 24;
+      } else if (mode === 'Antisymmetric (-)') {
+        params.th1Deg = 24;
+        params.th2Deg = -24;
+      }
+      if (gui) gui.controllers.forEach(c => c.updateDisplay());
+      resetState();
+    }
+
+    function resetState() {
+      state = [
+        (params.th1Deg * Math.PI) / 180,
+        0,
+        (params.th2Deg * Math.PI) / 180,
+        0
+      ];
+    }
+
+    const gui = new GUI({ title: 'Coupled Pendulums Controls' });
+    gui.add(params, 'modePreset', ['Beat Exchange', 'Symmetric (+)', 'Antisymmetric (-)'])
+      .name('Normal Mode Preset')
+      .onChange(applyPreset);
+    gui.add(params, 'kc', 0.2, 8.0, 0.1).name('Coupling k_c (N/m)');
+    gui.add(params, 'L', 3.0, 6.5, 0.1).name('Length L (m)');
+    gui.add(params, 'm', 0.5, 4.0, 0.1).name('Bob Mass m (kg)');
+    gui.add(params, 'th1Deg', -40, 40, 1).name('Initial \u03b8_1 (\u00b0)').onChange(resetState);
+    gui.add(params, 'th2Deg', -40, 40, 1).name('Initial \u03b8_2 (\u00b0)').onChange(resetState);
+    gui.add(params, 'paused').name('Pause');
+    gui.add(params, 'reset').name('Reset Simulation');
+
+    resetState();
+
+    function rk4Step(s, dt) {
+      const { kc, m, L, g } = params;
+      const deriv = ([th1, w1, th2, w2]) => {
+        const dx = L * (Math.sin(th2) - Math.sin(th1));
+        const a1 = -(g / L) * Math.sin(th1) + (kc / m) * (dx / L) * Math.cos(th1);
+        const a2 = -(g / L) * Math.sin(th2) - (kc / m) * (dx / L) * Math.cos(th2);
+        return [w1, a1, w2, a2];
+      };
+      const k1 = deriv(s);
+      const k2 = deriv(s.map((v, i) => v + 0.5 * dt * k1[i]));
+      const k3 = deriv(s.map((v, i) => v + 0.5 * dt * k2[i]));
+      const k4 = deriv(s.map((v, i) => v + dt * k3[i]));
+      return s.map((v, i) => v + (dt / 6) * (k1[i] + 2 * k2[i] + 2 * k3[i] + k4[i]));
+    }
+
+    function updateScene() {
+      const [th1, w1, th2, w2] = state;
+      const { kc, m, L, g } = params;
+
+      const p1 = new THREE.Vector3(pivot1.x + L * Math.sin(th1), pivot1.y - L * Math.cos(th1), 0);
+      const p2 = new THREE.Vector3(pivot2.x + L * Math.sin(th2), pivot2.y - L * Math.cos(th2), 0);
+
+      bob1.position.copy(p1);
+      bob2.position.copy(p2);
+      rod1Geo.setFromPoints([pivot1, p1]);
+      rod2Geo.setFromPoints([pivot2, p2]);
+
+      // Coupling spring attaches 65% down the rods for clear visual separation
+      const s1 = new THREE.Vector3().lerpVectors(pivot1, p1, 0.68);
+      const s2 = new THREE.Vector3().lerpVectors(pivot2, p2, 0.68);
+      const dir = new THREE.Vector3().subVectors(s2, s1);
+      const len = dir.length();
+      const uDir = dir.clone().normalize();
+      const perp = new THREE.Vector3(-uDir.y, uDir.x, 0);
+
+      for (let i = 0; i < springPts; i++) {
+        const u = i / (springPts - 1);
+        const ang = u * 16 * Math.PI * 2;
+        const r = (i === 0 || i === springPts - 1) ? 0 : 0.25;
+        const base = new THREE.Vector3().lerpVectors(s1, s2, u);
+        springArr[i * 3] = base.x + perp.x * r * Math.cos(ang);
+        springArr[i * 3 + 1] = base.y + perp.y * r * Math.cos(ang);
+        springArr[i * 3 + 2] = r * Math.sin(ang);
+      }
+      springGeo.attributes.position.needsUpdate = true;
+
+      // Velocity arrows
+      const v1 = w1 * L;
+      const v2 = w2 * L;
+      const tang1 = new THREE.Vector3(Math.cos(th1), Math.sin(th1), 0);
+      const tang2 = new THREE.Vector3(Math.cos(th2), Math.sin(th2), 0);
+
+      velArrow1.position.copy(p1);
+      velArrow1.setDirection(tang1.clone().multiplyScalar(v1 >= 0 ? 1 : -1).normalize());
+      velArrow1.setLength(Math.max(0.05, Math.min(2.5, Math.abs(v1) * 0.45)), 0.28, 0.16);
+
+      velArrow2.position.copy(p2);
+      velArrow2.setDirection(tang2.clone().multiplyScalar(v2 >= 0 ? 1 : -1).normalize());
+      velArrow2.setLength(Math.max(0.05, Math.min(2.5, Math.abs(v2) * 0.45)), 0.28, 0.16);
+
+      // Spring coupling force arrows
+      const stretch = L * (Math.sin(th2) - Math.sin(th1));
+      const Fc = kc * stretch;
+      forceArrow1.position.copy(s1);
+      forceArrow1.setDirection(new THREE.Vector3(Fc >= 0 ? 1 : -1, 0, 0));
+      forceArrow1.setLength(Math.max(0.05, Math.min(2.4, Math.abs(Fc) * 0.35)), 0.26, 0.15);
+
+      forceArrow2.position.copy(s2);
+      forceArrow2.setDirection(new THREE.Vector3(Fc >= 0 ? -1 : 1, 0, 0));
+      forceArrow2.setLength(Math.max(0.05, Math.min(2.4, Math.abs(Fc) * 0.35)), 0.26, 0.15);
+
+      // Individual & Total Energies
+      const E1 = 0.5 * m * v1 * v1 + m * g * L * (1 - Math.cos(th1));
+      const E2 = 0.5 * m * v2 * v2 + m * g * L * (1 - Math.cos(th2));
+      const Es = 0.5 * kc * stretch * stretch;
+      const Etot = E1 + E2 + Es;
+
+      const h1 = Math.max(0.1, E1 * 0.45);
+      const h2 = Math.max(0.1, E2 * 0.45);
+      eBar1.scale.y = h1;
+      eBar1.position.set(-5.8, -4.2 + h1 / 2, -1.5);
+      eBar2.scale.y = h2;
+      eBar2.position.set(5.8, -4.2 + h2 / 2, -1.5);
+
+      const omegaPlus = Math.sqrt(g / L);
+      const omegaMinus = Math.sqrt(g / L + (2 * kc) / m);
+      const omegaBeat = omegaMinus - omegaPlus;
+
+      document.getElementById('hud-th').innerHTML =
+        `${((th1 * 180) / Math.PI).toFixed(1)}&deg;, ${((th2 * 180) / Math.PI).toFixed(1)}&deg;`;
+      document.getElementById('hud-modes').textContent =
+        `${omegaPlus.toFixed(2)}, ${omegaMinus.toFixed(2)} rad/s`;
+      document.getElementById('hud-beat').textContent = `${omegaBeat.toFixed(2)} rad/s`;
+      document.getElementById('hud-e12').textContent = `${E1.toFixed(2)} J, ${E2.toFixed(2)} J`;
+      document.getElementById('hud-etot').textContent = `${Etot.toFixed(2)} J`;
+    }
+
+    updateScene();
+
+    let frameCount = 0;
+    let lastTime = performance.now();
+
+    function animate() {
+      requestAnimationFrame(animate);
+      if (!params.paused) {
+        const dt = 0.004;
+        for (let i = 0; i < 4; i++) {
+          state = rk4Step(state, dt);
+        }
+        updateScene();
+      }
+      controls.update();
+      renderer.render(scene, camera);
+
+      frameCount++;
+      const now = performance.now();
+      if (now - lastTime >= 1000) {
+        const fps = Math.round((frameCount * 1000) / (now - lastTime));
+        const hasNaN = isNaN(state[0]) || isNaN(state[2]);
+        window.parent.postMessage({
+          type: 'physicraft_telemetry',
+          fps,
+          hasNaN,
+          errors: runtimeErrors,
+          energyBounded: Math.abs(state[1]) < 100
+        }, '*');
+        frameCount = 0;
+        lastTime = now;
+      }
+    }
+    animate();
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>

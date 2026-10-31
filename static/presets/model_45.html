@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>45. Bohr & De Broglie Atom: Standing Matter Waves & Photon Transitions</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #070b14; color: #e2e8f0; font-family: 'Inter', -apple-system, sans-serif; overflow: hidden; }
+    canvas { display: block; width: 100vw; height: 100vh; }
+    #hud {
+      position: absolute; bottom: 20px; left: 20px; width: 380px;
+      background: rgba(15, 23, 42, 0.88); backdrop-filter: blur(12px);
+      border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 12px;
+      padding: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+      font-size: 13px; line-height: 1.5; z-index: 10;
+    }
+    #hud h2 { font-size: 15px; color: #38bdf8; margin-bottom: 8px; font-weight: 600; }
+    .metric { display: flex; justify-content: space-between; margin: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.06); padding-bottom: 3px; }
+    .metric span.val { font-family: 'JetBrains Mono', monospace; color: #f8fafc; font-weight: 600; }
+    .legend { margin-top: 10px; display: flex; flex-direction: column; gap: 5px; font-size: 12px; }
+    .legend-item { display: flex; align-items: center; gap: 8px; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  </style>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+      "lil-gui": "https://unpkg.com/lil-gui@0.19.1/dist/lil-gui.esm.min.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="hud">
+    <h2>45. Bohr & De Broglie Atom (3D)</h2>
+    <div class="metric"><span>Principal Quantum Number (n):</span><span class="val" id="m-n">n = 3</span></div>
+    <div class="metric"><span>Energy Level (E_n = -13.6/n²):</span><span class="val" id="m-en">-1.51 eV</span></div>
+    <div class="metric"><span>De Broglie Condition (2πr / λ):</span><span class="val" id="m-standing">3.00 (Constructive)</span></div>
+    <div class="metric"><span>Angular Momentum (L = nℏ):</span><span class="val" id="m-angmom">3.00 ℏ</span></div>
+    <div class="metric"><span>Last Transition (ΔE | λ):</span><span class="val" id="m-transition">1.89 eV | 656 nm (Hα)</span></div>
+    <div class="legend">
+      <div class="legend-item"><span class="dot" style="background:#38bdf8"></span>De Broglie Matter Wave Ψ(φ,t) & Velocity v</div>
+      <div class="legend-item"><span class="dot" style="background:#a855f7"></span>Quantized Angular Momentum Vector L = r × p</div>
+      <div class="legend-item"><span class="dot" style="background:#ef4444"></span>Centripetal Coulomb Force Vector F_C</div>
+      <div class="legend-item"><span class="dot" style="background:#facc15"></span>Emitted / Absorbed Photon Wavepacket (hν)</div>
+    </div>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import GUI from 'lil-gui';
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x070b14);
+    scene.fog = new THREE.FogExp2(0x070b14, 0.018);
+
+    const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 200);
+    camera.position.set(0, 10, 15);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    document.body.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+
+    // Lighting
+    scene.add(new THREE.AmbientLight(0xffffff, 0.65));
+    const pointLight = new THREE.PointLight(0xf43f5e, 2.5, 30);
+    scene.add(pointLight);
+    const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
+    dirLight.position.set(10, 20, 12);
+    scene.add(dirLight);
+
+    // Proton Nucleus at Origin
+    const nucleus = new THREE.Mesh(
+      new THREE.SphereGeometry(0.45, 32, 32),
+      new THREE.MeshStandardMaterial({ color: 0xf43f5e, emissive: 0xbe123c, roughness: 0.25, metalness: 0.5 })
+    );
+    scene.add(nucleus);
+
+    // Quantized Bohr Reference Orbits (n = 1..5)
+    // Visual radius scaling: r(n) = 1.2 * n^1.35 so n=1..5 fit nicely on screen
+    function getOrbitRadius(nVal) {
+      return 1.35 * Math.pow(nVal, 1.25);
+    }
+
+    for (let n = 1; n <= 5; n++) {
+      const r = getOrbitRadius(n);
+      const ringGeo = new THREE.RingGeometry(r - 0.03, r + 0.03, 96);
+      ringGeo.rotateX(Math.PI / 2);
+      const ringMat = new THREE.MeshBasicMaterial({
+        color: 0x334155,
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 0.55
+      });
+      scene.add(new THREE.Mesh(ringGeo, ringMat));
+    }
+
+    // 3D De Broglie Standing Matter Wave Curve along Orbit
+    const waveSegments = 360;
+    const wavePositions = new Float32Array((waveSegments + 1) * 3);
+    const waveGeo = new THREE.BufferGeometry();
+    waveGeo.setAttribute('position', new THREE.BufferAttribute(wavePositions, 3));
+    const waveMat = new THREE.LineBasicMaterial({ color: 0x38bdf8, linewidth: 2 });
+    const matterWaveLine = new THREE.Line(waveGeo, waveMat);
+    scene.add(matterWaveLine);
+
+    // Secondary phase-conjugate envelope for 3D standing wave visual
+    const wavePositions2 = new Float32Array((waveSegments + 1) * 3);
+    const waveGeo2 = new THREE.BufferGeometry();
+    waveGeo2.setAttribute('position', new THREE.BufferAttribute(wavePositions2, 3));
+    const waveMat2 = new THREE.LineBasicMaterial({ color: 0x0284c7, transparent: true, opacity: 0.45 });
+    const matterWaveLine2 = new THREE.Line(waveGeo2, waveMat2);
+    scene.add(matterWaveLine2);
+
+    // Orbiting Electron Particle + Vector Arrows
+    const electronMesh = new THREE.Mesh(
+      new THREE.SphereGeometry(0.22, 20, 20),
+      new THREE.MeshStandardMaterial({ color: 0x38bdf8, emissive: 0x0284c7 })
+    );
+    scene.add(electronMesh);
+
+    const velArrow = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(), 1.5, 0x38bdf8, 0.3, 0.18);
+    const forceArrow = new THREE.ArrowHelper(new THREE.Vector3(-1, 0, 0), new THREE.Vector3(), 1.5, 0xef4444, 0.3, 0.18);
+    const angMomArrow = new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 0), 2.5, 0xa855f7, 0.4, 0.25);
+    scene.add(velArrow, forceArrow, angMomArrow);
+
+    // Animated Photon Wavepacket for Emission / Absorption Transitions
+    const photonGroup = new THREE.Group();
+    photonGroup.visible = false;
+    scene.add(photonGroup);
+
+    const photonWavePts = 80;
+    const photonWavePos = new Float32Array(photonWavePts * 3);
+    const photonWaveGeo = new THREE.BufferGeometry();
+    photonWaveGeo.setAttribute('position', new THREE.BufferAttribute(photonWavePos, 3));
+    const photonLineMat = new THREE.LineBasicMaterial({ color: 0xfacc15 });
+    const photonLine = new THREE.Line(photonWaveGeo, photonLineMat);
+    photonGroup.add(photonLine);
+
+    const photonHead = new THREE.Mesh(
+      new THREE.SphereGeometry(0.18, 16, 16),
+      new THREE.MeshBasicMaterial({ color: 0xfacc15 })
+    );
+    photonGroup.add(photonHead);
+
+    // Simulation State & GUI Parameters
+    const params = {
+      nLevel: 3,
+      waveNumberDetune: 0.0, // allows exploring non-integer destructive interference!
+      waveAmplitude: 0.65,
+      emitPhotonDown: () => triggerTransition(Math.max(1, params.nLevel - 1)),
+      absorbPhotonUp: () => triggerTransition(Math.min(5, params.nLevel + 1)),
+      balmerHAlpha: () => { params.nLevel = 3; triggerTransition(2); },
+      lymanAlpha: () => { params.nLevel = 2; triggerTransition(1); },
+      paused: false,
+      reset: () => {
+        params.nLevel = 3;
+        params.waveNumberDetune = 0.0;
+        params.waveAmplitude = 0.65;
+        params.paused = false;
+        currentN = 3;
+        targetN = 3;
+        gui.controllersRecursive().forEach(c => c.updateDisplay());
+      }
+    };
+
+    let currentN = 3.0;
+    let targetN = 3;
+    let lastTransitionText = '1.89 eV | 656 nm (Hα)';
+    let activePhoton = null;
+
+    function triggerTransition(newN) {
+      if (newN === params.nLevel) return;
+      const nInit = params.nLevel;
+      const nFinal = newN;
+      const eInit = -13.6 / (nInit * nInit);
+      const eFinal = -13.6 / (nFinal * nFinal);
+      const deltaE = Math.abs(eFinal - eInit);
+      const lambdaNm = 1240.0 / deltaE;
+
+      // Determine spectral color
+      let colHex = 0xfacc15;
+      let seriesName = 'IR';
+      if (lambdaNm < 380) { colHex = 0xa855f7; seriesName = 'Lyman UV'; }
+      else if (lambdaNm < 450) { colHex = 0x6366f1; seriesName = 'Balmer Violet'; }
+      else if (lambdaNm < 510) { colHex = 0x38bdf8; seriesName = 'Balmer Hβ'; }
+      else if (lambdaNm < 700) { colHex = 0xef4444; seriesName = 'Balmer Hα'; }
+
+      lastTransitionText = `${deltaE.toFixed(2)} eV | ${lambdaNm.toFixed(0)} nm (${seriesName})`;
+      params.nLevel = nFinal;
+      targetN = nFinal;
+      params.waveNumberDetune = 0.0;
+      gui.controllersRecursive().forEach(c => c.updateDisplay());
+
+      // Launch visual photon wavepacket (outgoing for emission nInit > nFinal, incoming for absorption)
+      const isEmission = nInit > nFinal;
+      const rOrbit = getOrbitRadius(isEmission ? nInit : nFinal);
+      activePhoton = {
+        isEmission,
+        progress: 0,
+        rOrbit,
+        color: colHex
+      };
+      photonLineMat.color.setHex(colHex);
+      photonHead.material.color.setHex(colHex);
+      photonGroup.visible = true;
+    }
+
+    const gui = new GUI({ title: 'Bohr & De Broglie Controls' });
+    gui.add(params, 'nLevel', 1, 5, 1).name('Quantum Number n').onChange((v) => {
+      targetN = v;
+    });
+    gui.add(params, 'waveNumberDetune', -0.5, 0.5, 0.02).name('Detune Δn (Mismatch)');
+    gui.add(params, 'waveAmplitude', 0.2, 1.2, 0.05).name('Matter Wave Amp');
+    gui.add(params, 'emitPhotonDown').name('⬇ Emit Photon (n → n-1)');
+    gui.add(params, 'absorbPhotonUp').name('⬆ Absorb Photon (n → n+1)');
+    gui.add(params, 'balmerHAlpha').name('Balmer Hα (n=3 → 2)');
+    gui.add(params, 'lymanAlpha').name('Lyman α (n=2 → 1)');
+    gui.add(params, 'paused').name('Pause Simulation');
+    gui.add(params, 'reset').name('Reset Defaults');
+
+    // HUD Elements
+    const elN = document.getElementById('m-n');
+    const elEn = document.getElementById('m-en');
+    const elStanding = document.getElementById('m-standing');
+    const elAngMom = document.getElementById('m-angmom');
+    const elTransition = document.getElementById('m-transition');
+
+    let simTime = 0;
+    let electronAngle = 0;
+    let lastFrameTime = performance.now();
+    let frameCount = 0;
+    let currentFps = 60;
+    const runtimeErrors = [];
+    window.addEventListener('error', (e) => runtimeErrors.push(e.message));
+
+    function updateSimulation(dt) {
+      if (!params.paused) {
+        simTime += dt;
+        // Smooth transition of orbit radius
+        currentN += (targetN - currentN) * Math.min(1.0, dt * 6.0);
+      }
+
+      const effectiveN = currentN + params.waveNumberDetune;
+      const r = getOrbitRadius(currentN);
+      const isConstructive = Math.abs(params.waveNumberDetune) < 0.03;
+
+      // Update standing matter wave around orbit
+      waveMat.color.setHex(isConstructive ? 0x38bdf8 : 0xf43f5e);
+      const standingOsc = Math.cos(simTime * 4.5);
+
+      for (let i = 0; i <= waveSegments; i++) {
+        const phi = (i / waveSegments) * Math.PI * 2;
+        const waveVal = params.waveAmplitude * Math.sin(effectiveN * phi) * standingOsc;
+        const x = r * Math.cos(phi);
+        const z = r * Math.sin(phi);
+
+        wavePositions[i * 3] = x;
+        wavePositions[i * 3 + 1] = waveVal;
+        wavePositions[i * 3 + 2] = z;
+
+        wavePositions2[i * 3] = x;
+        wavePositions2[i * 3 + 1] = -waveVal;
+        wavePositions2[i * 3 + 2] = z;
+      }
+      waveGeo.attributes.position.needsUpdate = true;
+      waveGeo2.attributes.position.needsUpdate = true;
+
+      // Update Orbiting Electron & Vectors (v ~ 1/n)
+      const angularSpeed = 2.4 / Math.pow(currentN, 1.1);
+      if (!params.paused) {
+        electronAngle += angularSpeed * dt;
+      }
+
+      const ex = r * Math.cos(electronAngle);
+      const ez = r * Math.sin(electronAngle);
+      const ePos = new THREE.Vector3(ex, 0, ez);
+      electronMesh.position.copy(ePos);
+
+      // Tangential velocity vector
+      const vDir = new THREE.Vector3(-Math.sin(electronAngle), 0, Math.cos(electronAngle)).normalize();
+      velArrow.position.copy(ePos);
+      velArrow.setDirection(vDir);
+      velArrow.setLength(Math.max(0.8, 2.4 / Math.sqrt(currentN)), 0.3, 0.18);
+
+      // Centripetal Coulomb force vector toward nucleus with softening Math.max(1.5, r*r)
+      const r2Soft = Math.max(1.5, r * r);
+      const fDir = ePos.clone().negate().normalize();
+      forceArrow.position.copy(ePos);
+      forceArrow.setDirection(fDir);
+      forceArrow.setLength(Math.max(0.6, 5.5 / r2Soft), 0.28, 0.16);
+
+      // Quantized Angular Momentum Vector L = n * hbar along +Y
+      angMomArrow.setDirection(new THREE.Vector3(0, 1, 0));
+      angMomArrow.setLength(0.9 + currentN * 0.65, 0.38, 0.24);
+
+      // Update active photon wavepacket animation
+      if (activePhoton) {
+        activePhoton.progress += dt * 1.4;
+        const p = activePhoton.progress;
+        if (p >= 1.0) {
+          photonGroup.visible = false;
+          activePhoton = null;
+        } else {
+          const distStart = activePhoton.isEmission ? activePhoton.rOrbit : 11.0;
+          const distEnd = activePhoton.isEmission ? 11.0 : activePhoton.rOrbit;
+          const curDist = distStart + (distEnd - distStart) * p;
+          const packetLen = 2.2;
+
+          for (let i = 0; i < photonWavePts; i++) {
+            const s = (i / (photonWavePts - 1)) * packetLen;
+            const env = Math.sin((i / (photonWavePts - 1)) * Math.PI);
+            const x = curDist - packetLen / 2 + s;
+            const y = 0.45 * env * Math.sin(s * 12.0 - simTime * 18.0);
+            photonWavePos[i * 3] = x;
+            photonWavePos[i * 3 + 1] = y;
+            photonWavePos[i * 3 + 2] = 0;
+          }
+          photonWaveGeo.attributes.position.needsUpdate = true;
+          photonHead.position.set(
+            activePhoton.isEmission ? curDist + packetLen / 2 : curDist - packetLen / 2,
+            0,
+            0
+          );
+        }
+      }
+
+      // Update HUD
+      const enVal = -13.6 / (params.nLevel * params.nLevel);
+      elN.textContent = `n = ${params.nLevel}`;
+      elEn.textContent = `${enVal.toFixed(2)} eV`;
+      elStanding.textContent = `${effectiveN.toFixed(2)} (${isConstructive ? 'Constructive' : 'Destructive!'})`;
+      elAngMom.textContent = `${effectiveN.toFixed(2)} ℏ`;
+      elTransition.textContent = lastTransitionText;
+    }
+
+    function animate(now) {
+      requestAnimationFrame(animate);
+      const dt = Math.min((now - lastFrameTime) / 1000, 0.05);
+      lastFrameTime = now;
+      frameCount++;
+
+      updateSimulation(dt);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+    requestAnimationFrame(animate);
+
+    // 1-second Telemetry Heartbeat
+    setInterval(() => {
+      currentFps = frameCount;
+      frameCount = 0;
+      const hasNaN = Number.isNaN(currentN) || Number.isNaN(electronAngle);
+      window.parent.postMessage({
+        type: 'physicraft_telemetry',
+        fps: currentFps,
+        hasNaN: hasNaN,
+        errors: runtimeErrors,
+        energyBounded: true
+      }, '*');
+    }, 1000);
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>

@@ -19,8 +19,16 @@ import time
 import uuid
 from typing import Any, Dict, List, Optional, Tuple
 
-from dotenv import load_dotenv
-from google import genai
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    def load_dotenv(*args: Any, **kwargs: Any) -> bool:  # type: ignore
+        return False
+
+try:
+    from google import genai
+except ImportError:
+    genai = None  # type: ignore
 
 from presets import PRESETS
 from subagent_ferpa_gate import run_subagent_ferpa_audit, scan_pii_and_ferpa_compliance
@@ -41,6 +49,7 @@ from universal_physics_compiler import (
     strip_combining_arrows,
     universal_physics_accuracy_audit,
 )
+from catalog_50_models import match_50_physics_model, CATALOG_50_MODELS
 
 load_dotenv()
 
@@ -107,10 +116,12 @@ Given a teacher's physics lesson request, return ONLY valid JSON with these exac
 
 def get_api_key() -> str:
     load_dotenv(override=True)
+    if genai is None:
+        return ""
     return os.environ.get("GEMINI_API_KEY", "").strip()
 
 
-def get_client() -> genai.Client:
+def get_client() -> Any:
     api_key = get_api_key()
     if not api_key:
         raise ValueError("GEMINI_API_KEY is not set.")
@@ -653,12 +664,13 @@ async def run_guardrail_router(prompt: str) -> Dict[str, Any]:
 async def run_curriculum_subagent(prompt: str) -> Dict[str, Any]:
     """Stage 2: Fast parallel subagent using gemini-3.8-flash (thinking_level='low') for equations & intuition checks."""
     t0 = time.perf_counter()
-    if not get_api_key():
+    matched_50 = match_50_physics_model(prompt)
+    if matched_50 or not get_api_key():
         synth = synthesize_parametric_3d_lab(prompt)
         return {
             "model": "gemini-3.8-flash",
-            "interaction_id": "parametric-curriculum",
-            "latency_ms": 45,
+            "interaction_id": f"catalog-curriculum-{matched_50['model']['id']:02d}" if matched_50 else "parametric-curriculum",
+            "latency_ms": max(8, round((time.perf_counter() - t0) * 1000)),
             "curriculum": synth["curriculum"],
         }
 
@@ -814,16 +826,17 @@ async def run_argon_3d_architect(
       Runs `deep_verify_and_repair_3d_html` to enforce `Math.max(1.5, r * r)` singularity softening and 1Hz telemetry.
     """
     t0 = time.perf_counter()
+    matched_50 = match_50_physics_model(prompt)
 
-    # Check if this is a multi-turn refinement on a cached scene and no live API key is set (or for instant fast-path)
-    if not get_api_key():
-        if previous_interaction_id and previous_interaction_id in INTERACTION_SCENE_CACHE:
+    # Check if this matches one of the 50 canonical models or no live API key is set
+    if matched_50 or not get_api_key():
+        if previous_interaction_id and previous_interaction_id in INTERACTION_SCENE_CACHE and not matched_50:
             base_html = INTERACTION_SCENE_CACHE[previous_interaction_id]
             refined_html = apply_multiturn_refinement(base_html, prompt)
         else:
             synth = synthesize_parametric_3d_lab(prompt, physics_audit=physics_audit)
             refined_html = synth["html"]
-            if previous_interaction_id:
+            if previous_interaction_id and not matched_50:
                 refined_html = apply_multiturn_refinement(refined_html, prompt)
 
         verified_html, verification_report = verify_and_instrument_3d_html(strip_combining_arrows(refined_html))

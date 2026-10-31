@@ -10,12 +10,62 @@ import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from dotenv import load_dotenv, set_key
-from fastapi import FastAPI, File, HTTPException, UploadFile
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+try:
+    from dotenv import load_dotenv, set_key
+except ImportError:
+    def load_dotenv(*args: Any, **kwargs: Any) -> bool:  # type: ignore
+        return False
+
+    def set_key(env_path: str, key: str, val: str) -> None:  # type: ignore
+        p = Path(env_path)
+        p.write_text(f"{key}={val}\n", encoding="utf-8")
+
+try:
+    from fastapi import FastAPI, File, HTTPException, UploadFile
+    from fastapi.middleware.cors import CORSMiddleware
+    from fastapi.responses import FileResponse
+    from fastapi.staticfiles import StaticFiles
+    from pydantic import BaseModel
+    HAS_FASTAPI = True
+except ImportError:
+    HAS_FASTAPI = False
+
+    class HTTPException(Exception):  # type: ignore
+        def __init__(self, status_code: int = 400, detail: str = "Error"):
+            self.status_code = status_code
+            self.detail = detail
+            super().__init__(detail)
+
+    class BaseModel:  # type: ignore
+        def __init__(self, **kwargs: Any):
+            for k, v in self.__class__.__dict__.items():
+                if not k.startswith("_") and not callable(v):
+                    setattr(self, k, v)
+            for k, v in kwargs.items():
+                setattr(self, k, v)
+
+    class _DummyApp:
+        def add_middleware(self, *args: Any, **kwargs: Any) -> None:
+            pass
+        def mount(self, *args: Any, **kwargs: Any) -> None:
+            pass
+        def get(self, *args: Any, **kwargs: Any):
+            return lambda fn: fn
+        def post(self, *args: Any, **kwargs: Any):
+            return lambda fn: fn
+
+    def FastAPI(*args: Any, **kwargs: Any) -> Any:  # type: ignore
+        return _DummyApp()
+
+    def File(*args: Any, **kwargs: Any) -> Any:  # type: ignore
+        return None
+
+    class UploadFile:  # type: ignore
+        pass
+
+    CORSMiddleware = object  # type: ignore
+    FileResponse = lambda p: p  # type: ignore
+    StaticFiles = lambda **kw: None  # type: ignore
 
 from engine import (
     INTERACTION_LINEAGE,
@@ -31,12 +81,15 @@ from engine import (
     verify_and_instrument_3d_html,
 )
 from presets import PRESETS
+from catalog_50_models import CATALOG_50_MODELS, match_50_physics_model
 
 load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
 STATIC_DIR.mkdir(exist_ok=True)
+PRESETS_50_DIR = STATIC_DIR / "presets"
+PRESETS_50_DIR.mkdir(exist_ok=True)
 ENV_PATH = BASE_DIR / ".env"
 
 app = FastAPI(
@@ -44,6 +97,8 @@ app = FastAPI(
     description="Built with Gemini 4 Argon & Companion Models on the Interactions API",
     version="1.1.0",
 )
+
+app.mount("/presets", StaticFiles(directory=str(PRESETS_50_DIR)), name="presets_50")
 
 app.add_middleware(
     CORSMiddleware,
@@ -124,6 +179,17 @@ async def api_status():
 async def api_lineage():
     """Returns stateful Interactions API lineage (`interaction_id` & `previous_interaction_id` chain)."""
     return {"lineage": INTERACTION_LINEAGE}
+
+
+@app.get("/api/models-50")
+async def api_models_50(q: Optional[str] = None):
+    """Returns the 50 canonical AP Physics 3D models and optional keyword match result."""
+    match = match_50_physics_model(q) if q else None
+    return {
+        "count": len(CATALOG_50_MODELS),
+        "match": match,
+        "models": CATALOG_50_MODELS,
+    }
 
 
 @app.post("/api/verify-html")
@@ -327,3 +393,115 @@ async def api_publish_confirm(req: PublishConfirmRequest):
 
 
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+
+def run_stdlib_server(host: str = "127.0.0.1", port: int = 8000) -> None:
+    """Zero-dependency HTTP server fallback serving all PhysiCraft endpoints & static/presets files."""
+    import json
+    import mimetypes
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from urllib.parse import parse_qs, urlparse
+
+    class PhysiCraftHandler(BaseHTTPRequestHandler):
+        def log_message(self, fmt: str, *args: Any) -> None:
+            pass
+
+        def _send_json(self, data: Any, status: int = 200) -> None:
+            raw = json.dumps(data).encode("utf-8")
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(raw)))
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(raw)
+
+        def _send_file(self, file_path: Path) -> None:
+            if not file_path.exists() or not file_path.is_file():
+                self.send_error(404, "Not Found")
+                return
+            mime, _ = mimetypes.guess_type(str(file_path))
+            raw = file_path.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", mime or "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(raw)))
+            self.end_headers()
+            self.wfile.write(raw)
+
+        def do_OPTIONS(self) -> None:
+            self.send_response(204)
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type")
+            self.end_headers()
+
+        def do_GET(self) -> None:
+            parsed = urlparse(self.path)
+            path = parsed.path
+            qs = parse_qs(parsed.query)
+            if path in ("/", "/index.html"):
+                self._send_file(STATIC_DIR / "index.html")
+            elif path == "/api/status":
+                self._send_json(asyncio.run(api_status()))
+            elif path == "/api/lineage":
+                self._send_json(asyncio.run(api_lineage()))
+            elif path == "/api/presets":
+                self._send_json(asyncio.run(api_presets()))
+            elif path == "/api/models-50":
+                q = qs.get("q", [None])[0]
+                self._send_json(asyncio.run(api_models_50(q=q)))
+            elif path.startswith("/presets/"):
+                rel = path[len("/presets/"):]
+                self._send_file(PRESETS_50_DIR / rel)
+            elif path.startswith("/static/"):
+                rel = path[len("/static/"):]
+                self._send_file(STATIC_DIR / rel)
+            else:
+                self.send_error(404, "Not Found")
+
+        def do_POST(self) -> None:
+            length = int(self.headers.get("Content-Length", "0"))
+            raw_body = self.rfile.read(length) if length > 0 else b"{}"
+            try:
+                body = json.loads(raw_body.decode("utf-8"))
+            except Exception:
+                body = {}
+            path = urlparse(self.path).path
+            try:
+                if path == "/api/generate":
+                    res = asyncio.run(api_generate(GenerateRequest(**body)))
+                elif path == "/api/verify-html":
+                    res = asyncio.run(api_verify_html(VerifyHtmlRequest(**body)))
+                elif path == "/api/set-key":
+                    res = asyncio.run(api_set_key(SetKeyRequest(**body)))
+                elif path == "/api/self-heal":
+                    res = asyncio.run(api_self_heal(SelfHealRequest(**body)))
+                elif path == "/api/tts":
+                    res = asyncio.run(api_tts(TTSRequest(**body)))
+                elif path == "/api/publish-preview":
+                    res = asyncio.run(api_publish_preview(PublishPreviewRequest(**body)))
+                elif path == "/api/publish-confirm":
+                    res = asyncio.run(api_publish_confirm(PublishConfirmRequest(**body)))
+                else:
+                    self._send_json({"detail": "Not found"}, status=404)
+                    return
+                self._send_json(res, status=200)
+            except HTTPException as exc:
+                self._send_json({"detail": exc.detail}, status=exc.status_code)
+            except Exception as exc:
+                self._send_json({"detail": str(exc)}, status=500)
+
+    server = ThreadingHTTPServer((host, port), PhysiCraftHandler)
+    print(f"PhysiCraft server running on http://{host}:{port} (50-Model Catalog Active)")
+    server.serve_forever()
+
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", "8000"))
+    try:
+        import uvicorn
+        if HAS_FASTAPI:
+            uvicorn.run(app, host="127.0.0.1", port=port)
+        else:
+            run_stdlib_server("127.0.0.1", port)
+    except ImportError:
+        run_stdlib_server("127.0.0.1", port)

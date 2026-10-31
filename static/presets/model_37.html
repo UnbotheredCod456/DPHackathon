@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>37. Magnetic Mirror & Van Allen Radiation Belt (Boris Solver)</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #070b14; color: #e2e8f0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; overflow: hidden; }
+    canvas { display: block; width: 100vw; height: 100vh; }
+    #hud {
+      position: fixed; bottom: 16px; left: 16px; z-index: 10;
+      background: rgba(10, 16, 30, 0.88); backdrop-filter: blur(10px);
+      border: 1px solid rgba(56, 189, 248, 0.28); border-radius: 12px;
+      padding: 14px 18px; min-width: 325px; box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+      font-size: 12.5px; line-height: 1.55;
+    }
+    #hud h2 { font-size: 14px; font-weight: 700; color: #38bdf8; margin-bottom: 8px; }
+    .row { display: flex; justify-content: space-between; gap: 16px; font-variant-numeric: tabular-nums; }
+    .lbl { color: #94a3b8; }
+    .val { color: #f8fafc; font-weight: 600; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; margin-top: 6px; }
+    .badge-ok { background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid rgba(16,185,129,0.4); }
+    .badge-warn { background: rgba(239, 68, 68, 0.22); color: #f87171; border: 1px solid rgba(239,68,68,0.4); }
+    .legend { margin-top: 10px; padding-top: 8px; border-top: 1px solid rgba(148,163,184,0.18); display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; font-size: 11.5px; }
+    .leg-item { display: flex; align-items: center; gap: 6px; color: #cbd5e1; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  </style>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+      "lil-gui": "https://unpkg.com/lil-gui@0.19.1/dist/lil-gui.esm.min.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="hud">
+    <h2>37. Magnetic Mirror Bottle (Boris Solver)</h2>
+    <div class="row"><span class="lbl">Mirror Ratio R_m = B_max/B_0:</span><span class="val" id="rmVal">0.00</span></div>
+    <div class="row"><span class="lbl">Loss Cone θ_loss:</span><span class="val" id="lossConeVal">0.0°</span></div>
+    <div class="row"><span class="lbl">Pitch Angle α:</span><span class="val" id="pitchVal">0.0°</span></div>
+    <div class="row"><span class="lbl">Adiabatic μ = m v_⊥² / 2B:</span><span class="val" id="muVal">0.000</span></div>
+    <div class="row"><span class="lbl">Kinetic Energy K (Boris):</span><span class="val" id="keVal">0.000 J</span></div>
+    <div class="row"><span class="lbl">Axial Position x:</span><span class="val" id="xVal">0.00 m</span></div>
+    <div id="trapBadge" class="badge badge-ok">Status: Trapped in Magnetic Bottle</div>
+    <div class="legend">
+      <div class="leg-item"><span class="dot" style="background:#22c55e"></span>Velocity v</div>
+      <div class="leg-item"><span class="dot" style="background:#38bdf8"></span>Local B(r) Vector</div>
+      <div class="leg-item"><span class="dot" style="background:#a855f7"></span>Lorentz Force qv×B</div>
+      <div class="leg-item"><span class="dot" style="background:#f59e0b"></span>Mirror Coils</div>
+    </div>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import GUI from 'lil-gui';
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x070b14);
+    scene.fog = new THREE.FogExp2(0x070b14, 0.014);
+
+    const camera = new THREE.PerspectiveCamera(48, window.innerWidth / window.innerHeight, 0.1, 200);
+    camera.position.set(0, 10, 24);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    document.body.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.06;
+
+    scene.add(new THREE.AmbientLight(0x94a3b8, 0.75));
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.3);
+    dirLight.position.set(12, 20, 18);
+    scene.add(dirLight);
+
+    const L = 9.0; // Mirror throat half-length at x = ±L
+
+    // High-field Pinch Coils at x = -L and x = +L
+    const coilGeo = new THREE.TorusGeometry(2.3, 0.28, 24, 64);
+    const coilMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, emissive: 0xb45309, emissiveIntensity: 0.4, metalness: 0.7, roughness: 0.25 });
+    const leftCoil = new THREE.Mesh(coilGeo, coilMat);
+    const rightCoil = new THREE.Mesh(coilGeo, coilMat);
+    leftCoil.rotation.y = Math.PI / 2;
+    rightCoil.rotation.y = Math.PI / 2;
+    leftCoil.position.x = -L;
+    rightCoil.position.x = L;
+    scene.add(leftCoil, rightCoil);
+
+    // Subtle central guide rings
+    const midRingGeo = new THREE.TorusGeometry(4.8, 0.06, 16, 64);
+    const midRingMat = new THREE.MeshBasicMaterial({ color: 0x1e293b, transparent: true, opacity: 0.7 });
+    for (let x = -4.5; x <= 4.5; x += 4.5) {
+      const r = new THREE.Mesh(midRingGeo, midRingMat);
+      r.rotation.y = Math.PI / 2;
+      r.position.x = x;
+      scene.add(r);
+    }
+
+    // Magnetic Bottle Flux Envelope Lines
+    const fieldLinesGroup = new THREE.Group();
+    scene.add(fieldLinesGroup);
+
+    const params = {
+      B0: 1.2,
+      mirrorRatio: 3.5,
+      pitchAngleDeg: 52,
+      speed0: 7.5,
+      qm: 2.2,
+      paused: false,
+      reset: () => resetSim()
+    };
+
+    // Divergence-free Magnetic Bottle Field:
+    // B_x(x) = B0 * (1 + (Rm - 1) * (x/L)^2)
+    // Since div(B) = 0 => dBx/dx + dBy/dy + dBz/dz = 0 => B_perp = -0.5 * r_perp * (dBx/dx)
+    function evaluateB(p) {
+      const alpha = (params.mirrorRatio - 1.0) / (L * L);
+      const Bx = params.B0 * (1.0 + alpha * p.x * p.x);
+      const dBxdx = params.B0 * 2.0 * alpha * p.x;
+      const By = -0.5 * p.y * dBxdx;
+      const Bz = -0.5 * p.z * dBxdx;
+      return new THREE.Vector3(Bx, By, Bz);
+    }
+
+    function rebuildFieldLines() {
+      while (fieldLinesGroup.children.length) {
+        const ch = fieldLinesGroup.children.pop();
+        ch.geometry.dispose();
+      }
+      const r0 = 3.8;
+      const numLines = 12;
+      for (let k = 0; k < numLines; k++) {
+        const phi = (k / numLines) * Math.PI * 2;
+        const pts = [];
+        for (let i = 0; i <= 80; i++) {
+          const x = -L + (2 * L * i) / 80;
+          const bScale = 1.0 + (params.mirrorRatio - 1.0) * (x / L) * (x / L);
+          const r = r0 / Math.sqrt(bScale);
+          pts.push(new THREE.Vector3(x, r * Math.cos(phi), r * Math.sin(phi)));
+        }
+        const geo = new THREE.BufferGeometry().setFromPoints(pts);
+        const mat = new THREE.LineBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.28 });
+        fieldLinesGroup.add(new THREE.Line(geo, mat));
+      }
+    }
+
+    // Trapped Particle & Trajectory
+    const pMesh = new THREE.Mesh(
+      new THREE.SphereGeometry(0.32, 24, 24),
+      new THREE.MeshStandardMaterial({ color: 0x34d399, emissive: 0x10b981, emissiveIntensity: 0.8 })
+    );
+    scene.add(pMesh);
+
+    const MAX_TRAIL = 1400;
+    const trailBuf = new Float32Array(MAX_TRAIL * 3);
+    const trailGeo = new THREE.BufferGeometry();
+    trailGeo.setAttribute('position', new THREE.BufferAttribute(trailBuf, 3));
+    const trailLine = new THREE.Line(trailGeo, new THREE.LineBasicMaterial({ color: 0xf43f5e, transparent: true, opacity: 0.9 }));
+    scene.add(trailLine);
+    let trailCount = 0;
+
+    // Dynamic Vectors
+    const vArrow = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(), 2, 0x22c55e, 0.4, 0.24);
+    const bArrow = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(), 2, 0x38bdf8, 0.4, 0.24);
+    const fArrow = new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), new THREE.Vector3(), 2, 0xa855f7, 0.4, 0.24);
+    scene.add(vArrow, bArrow, fArrow);
+
+    const pos = new THREE.Vector3();
+    const vel = new THREE.Vector3();
+
+    function pushTrail(p) {
+      if (trailCount < MAX_TRAIL) {
+        trailBuf[trailCount * 3] = p.x;
+        trailBuf[trailCount * 3 + 1] = p.y;
+        trailBuf[trailCount * 3 + 2] = p.z;
+        trailCount++;
+      } else {
+        trailBuf.copyWithin(0, 3, MAX_TRAIL * 3);
+        trailBuf[(MAX_TRAIL - 1) * 3] = p.x;
+        trailBuf[(MAX_TRAIL - 1) * 3 + 1] = p.y;
+        trailBuf[(MAX_TRAIL - 1) * 3 + 2] = p.z;
+      }
+      trailGeo.setDrawRange(0, trailCount);
+      trailGeo.attributes.position.needsUpdate = true;
+    }
+
+    function resetSim() {
+      rebuildFieldLines();
+      const alphaRad = THREE.MathUtils.degToRad(params.pitchAngleDeg);
+      const vPerp = params.speed0 * Math.sin(alphaRad);
+      const vPar = params.speed0 * Math.cos(alphaRad);
+      const rL0 = vPerp / Math.max(0.2, params.qm * params.B0);
+      pos.set(0, rL0, 0);
+      vel.set(vPar, 0, vPerp);
+      trailCount = 0;
+      pushTrail(pos);
+    }
+
+    // Exact Energy-Conserving Boris Rotation Solver (E = 0)
+    function stepBoris(dt) {
+      const B = evaluateB(pos);
+      const t = B.clone().multiplyScalar(0.5 * dt * params.qm);
+      const s = t.clone().multiplyScalar(2.0 / (1.0 + t.lengthSq()));
+
+      const vPrime = vel.clone().add(new THREE.Vector3().crossVectors(vel, t));
+      vel.add(new THREE.Vector3().crossVectors(vPrime, s));
+      pos.addScaledVector(vel, dt);
+
+      if (Math.abs(pos.x) > 15) {
+        resetSim();
+      }
+    }
+
+    const gui = new GUI({ title: 'Magnetic Mirror Controls' });
+    gui.add(params, 'pitchAngleDeg', 15, 85, 1).name('Init Pitch α_0 (°)').onChange(resetSim);
+    gui.add(params, 'mirrorRatio', 1.5, 6.0, 0.1).name('Mirror Ratio R_m').onChange(resetSim);
+    gui.add(params, 'B0', 0.6, 2.5, 0.1).name('Central B_0 (T)').onChange(resetSim);
+    gui.add(params, 'speed0', 4.0, 12.0, 0.5).name('Speed |v| (m/s)').onChange(resetSim);
+    gui.add(params, 'qm', 1.2, 4.0, 0.1).name('q/m Ratio').onChange(resetSim);
+    gui.add(params, 'paused').name('Pause');
+    gui.add(params, 'reset').name('Reset Particle');
+
+    resetSim();
+
+    const rmValEl = document.getElementById('rmVal');
+    const lossConeValEl = document.getElementById('lossConeVal');
+    const pitchValEl = document.getElementById('pitchVal');
+    const muValEl = document.getElementById('muVal');
+    const keValEl = document.getElementById('keVal');
+    const xValEl = document.getElementById('xVal');
+    const trapBadge = document.getElementById('trapBadge');
+
+    let frameCount = 0;
+    let lastTeleTime = performance.now();
+    const runtimeErrors = [];
+    window.addEventListener('error', (e) => runtimeErrors.push(e.message));
+
+    function updateHUD() {
+      pMesh.position.copy(pos);
+      const B = evaluateB(pos);
+      const bMag = Math.max(1e-5, B.length());
+      const vMag = Math.max(1e-5, vel.length());
+      const bHat = B.clone().divideScalar(bMag);
+      const vPar = vel.dot(bHat);
+      const vPerpSq = Math.max(0, vel.lengthSq() - vPar * vPar);
+      const pitchDeg = THREE.MathUtils.radToDeg(Math.acos(THREE.MathUtils.clamp(vPar / vMag, -1, 1)));
+      const lossConeDeg = THREE.MathUtils.radToDeg(Math.asin(1 / Math.sqrt(params.mirrorRatio)));
+      const mu = vPerpSq / (2 * bMag);
+      const ke = 0.5 * vel.lengthSq();
+
+      const Fb = new THREE.Vector3().crossVectors(vel, B).multiplyScalar(params.qm);
+
+      vArrow.position.copy(pos);
+      vArrow.setDirection(vel.clone().normalize());
+      vArrow.setLength(Math.min(3.2, 0.32 * vMag), 0.38, 0.22);
+
+      bArrow.position.copy(pos);
+      bArrow.setDirection(bHat);
+      bArrow.setLength(Math.min(3.2, 0.7 * bMag), 0.38, 0.22);
+
+      fArrow.position.copy(pos);
+      if (Fb.length() > 0.05) {
+        fArrow.visible = true;
+        fArrow.setDirection(Fb.clone().normalize());
+        fArrow.setLength(Math.min(3.0, 0.12 * Fb.length()), 0.38, 0.22);
+      } else fArrow.visible = false;
+
+      rmValEl.textContent = params.mirrorRatio.toFixed(2);
+      lossConeValEl.textContent = `${lossConeDeg.toFixed(1)}°`;
+      pitchValEl.textContent = `${pitchDeg.toFixed(1)}°`;
+      muValEl.textContent = mu.toFixed(3);
+      keValEl.textContent = `${ke.toFixed(3)} J`;
+      xValEl.textContent = `${pos.x.toFixed(2)} m`;
+
+      if (params.pitchAngleDeg > lossConeDeg) {
+        trapBadge.textContent = `Trapped (α₀ = ${params.pitchAngleDeg}° > θ_loss = ${lossConeDeg.toFixed(1)}°)`;
+        trapBadge.className = 'badge badge-ok';
+      } else {
+        trapBadge.textContent = `Inside Loss Cone (α₀ = ${params.pitchAngleDeg}° < θ_loss) — Escapes!`;
+        trapBadge.className = 'badge badge-warn';
+      }
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+      frameCount++;
+
+      if (!params.paused) {
+        const subSteps = 8;
+        const dt = (1 / 60) / subSteps;
+        for (let i = 0; i < subSteps; i++) {
+          stepBoris(dt);
+        }
+        pushTrail(pos);
+      }
+
+      updateHUD();
+      controls.update();
+      renderer.render(scene, camera);
+
+      const now = performance.now();
+      if (now - lastTeleTime >= 1000) {
+        const fps = Math.round((frameCount * 1000) / (now - lastTeleTime));
+        const hasNaN = [pos.x, pos.y, pos.z, vel.x, vel.y, vel.z].some(Number.isNaN);
+        window.parent.postMessage({
+          type: 'physicraft_telemetry',
+          fps,
+          hasNaN,
+          errors: runtimeErrors,
+          energyBounded: vel.lengthSq() < 1e4
+        }, '*');
+        frameCount = 0;
+        lastTeleTime = now;
+      }
+    }
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    animate();
+  </script>
+</body>
+</html>

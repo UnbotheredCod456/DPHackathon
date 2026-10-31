@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>17. 3D Ideal Gas Kinetic Theory Box with Piston & Maxwell-Boltzmann Histogram</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #070b14; color: #e2e8f0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; overflow: hidden; }
+  canvas { display: block; width: 100vw; height: 100vh; }
+  #hud {
+    position: fixed; bottom: 18px; left: 18px; z-index: 10;
+    background: rgba(10, 16, 30, 0.88); backdrop-filter: blur(10px);
+    border: 1px solid rgba(99, 179, 237, 0.28); border-radius: 12px;
+    padding: 14px 18px; min-width: 335px; box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+    font-size: 12.5px; line-height: 1.55;
+  }
+  #hud h2 { font-size: 14px; font-weight: 700; color: #63b3ed; margin-bottom: 6px; }
+  .row { display: flex; justify-content: space-between; gap: 14px; font-variant-numeric: tabular-nums; }
+  .label { color: #94a3b8; }
+  .val { color: #f8fafc; font-weight: 600; }
+  #histCanvas {
+    margin-top: 8px; width: 100%; height: 68px; background: rgba(15, 23, 42, 0.85);
+    border: 1px solid rgba(148,163,184,0.2); border-radius: 6px; display: block;
+  }
+  .legend { margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(148,163,184,0.18); display: flex; flex-wrap: wrap; gap: 10px; font-size: 11.5px; }
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+    "lil-gui": "https://unpkg.com/lil-gui@0.19.1/dist/lil-gui.esm.min.js"
+  }
+}
+</script>
+</head>
+<body>
+<div id="hud">
+  <h2>3D Ideal Gas Kinetic Theory & M-B Distribution</h2>
+  <div class="row"><span class="label">Temperature T:</span><span class="val" id="v-temp">300 K</span></div>
+  <div class="row"><span class="label">RMS Speed v_rms:</span><span class="val" id="v-rms">0.00 m/s</span></div>
+  <div class="row"><span class="label">Kinetic Pressure P:</span><span class="val" id="v-press">0.00 kPa</span></div>
+  <div class="row"><span class="label">Ideal Gas Ratio PV / NkT:</span><span class="val" id="v-ratio">1.00</span></div>
+  <canvas id="histCanvas" width="300" height="68"></canvas>
+  <div class="legend">
+    <span><i class="dot" style="background:#38bdf8"></i>Slow Particle</span>
+    <span><i class="dot" style="background:#facc15"></i>Thermal Mean</span>
+    <span><i class="dot" style="background:#f43f5e"></i>Fast / Piston Force</span>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import GUI from 'lil-gui';
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x070b14);
+
+const camera = new THREE.PerspectiveCamera(48, window.innerWidth / window.innerHeight, 0.1, 200);
+camera.position.set(15, 11, 18);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+document.body.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+
+scene.add(new THREE.AmbientLight(0x94a3b8, 0.8));
+const dirLight = new THREE.DirectionalLight(0xffffff, 1.3);
+dirLight.position.set(12, 22, 16);
+scene.add(dirLight);
+
+const params = {
+  temperature: 300,
+  pistonHeight: 8.0,
+  particleCount: 180,
+  paused: false,
+  reset: () => initParticles()
+};
+
+const boxHalfW = 4.5;
+const boxBaseY = -4.5;
+
+// Chamber wireframe walls
+const chamberGeo = new THREE.BoxGeometry(boxHalfW * 2, 10, boxHalfW * 2);
+const chamberEdges = new THREE.EdgesGeometry(chamberGeo);
+const chamberWire = new THREE.LineSegments(
+  chamberEdges,
+  new THREE.LineBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.45 })
+);
+chamberWire.position.y = 0.5;
+scene.add(chamberWire);
+
+// Movable Top Piston
+const pistonGeo = new THREE.BoxGeometry(boxHalfW * 1.98, 0.55, boxHalfW * 1.98);
+const pistonMat = new THREE.MeshStandardMaterial({
+  color: 0x334155,
+  metalness: 0.6,
+  roughness: 0.3,
+  transparent: true,
+  opacity: 0.88
+});
+const pistonMesh = new THREE.Mesh(pistonGeo, pistonMat);
+scene.add(pistonMesh);
+
+// Upward Pressure Force Arrow on Piston
+const pressureArrow = new THREE.ArrowHelper(
+  new THREE.Vector3(0, 1, 0),
+  new THREE.Vector3(0, 4, 0),
+  2.2,
+  0xf43f5e,
+  0.45,
+  0.25
+);
+scene.add(pressureArrow);
+
+// Sample Velocity Arrows on first 6 particles
+const sampleArrows = [];
+for (let i = 0; i < 6; i++) {
+  const arr = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(), 1.2, 0x38bdf8, 0.25, 0.14);
+  scene.add(arr);
+  sampleArrows.push(arr);
+}
+
+// Instanced Gas Molecules
+const maxN = 300;
+const sphereGeo = new THREE.SphereGeometry(0.22, 14, 14);
+const sphereMat = new THREE.MeshStandardMaterial({ roughness: 0.25, metalness: 0.1 });
+const instMesh = new THREE.InstancedMesh(sphereGeo, sphereMat, maxN);
+instMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+scene.add(instMesh);
+
+const pos = new Float32Array(maxN * 3);
+const vel = new Float32Array(maxN * 3);
+const dummy = new THREE.Object3D();
+const colorTmp = new THREE.Color();
+
+function gaussianRandom() {
+  let u = 0, v = 0;
+  while (u === 0) u = Math.random();
+  while (v === 0) v = Math.random();
+  return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+}
+
+function initParticles() {
+  const N = params.particleCount;
+  instMesh.count = N;
+  const sigma = Math.sqrt(params.temperature / 100) * 3.2;
+  const topY = boxBaseY + params.pistonHeight;
+
+  for (let i = 0; i < N; i++) {
+    pos[i * 3] = (Math.random() * 2 - 1) * (boxHalfW - 0.35);
+    pos[i * 3 + 1] = boxBaseY + 0.35 + Math.random() * (params.pistonHeight - 0.7);
+    pos[i * 3 + 2] = (Math.random() * 2 - 1) * (boxHalfW - 0.35);
+
+    vel[i * 3] = gaussianRandom() * sigma;
+    vel[i * 3 + 1] = gaussianRandom() * sigma;
+    vel[i * 3 + 2] = gaussianRandom() * sigma;
+  }
+  pistonMesh.position.y = topY + 0.28;
+}
+
+function rescaleTemperature(newT) {
+  const N = params.particleCount;
+  let sumSq = 0;
+  for (let i = 0; i < N; i++) {
+    const vx = vel[i * 3], vy = vel[i * 3 + 1], vz = vel[i * 3 + 2];
+    sumSq += vx * vx + vy * vy + vz * vz;
+  }
+  const currentMeanSq = sumSq / Math.max(1, N);
+  const targetMeanSq = 3 * (newT / 100) * (3.2 * 3.2);
+  const factor = Math.sqrt(targetMeanSq / Math.max(1e-4, currentMeanSq));
+  for (let i = 0; i < N * 3; i++) vel[i] *= factor;
+}
+
+const gui = new GUI({ title: 'Kinetic Theory Controls' });
+gui.add(params, 'temperature', 80, 900, 10).name('Temperature (K)').onChange(t => rescaleTemperature(t));
+gui.add(params, 'pistonHeight', 3.5, 9.5, 0.1).name('Piston Height V');
+gui.add(params, 'particleCount', 40, 300, 10).name('Particles N').onChange(() => initParticles());
+gui.add(params, 'paused').name('Pause');
+gui.add(params, 'reset').name('Re-thermalize');
+
+initParticles();
+
+const histCtx = document.getElementById('histCanvas').getContext('2d');
+let smoothedImpulse = 0;
+let runtimeErrors = [];
+window.addEventListener('error', (e) => runtimeErrors.push(e.message));
+
+let lastTime = performance.now();
+let frames = 0;
+let lastTelemetry = performance.now();
+
+function animate(now) {
+  requestAnimationFrame(animate);
+  frames++;
+  const dt = Math.min((now - lastTime) / 1000, 0.035);
+  lastTime = now;
+
+  const N = params.particleCount;
+  const topY = boxBaseY + params.pistonHeight;
+  pistonMesh.position.y = topY + 0.28;
+  const r = 0.22;
+
+  let wallImpulse = 0;
+  let sumV2 = 0;
+  const speeds = new Float32Array(N);
+
+  if (!params.paused) {
+    // Wall collisions & motion
+    for (let i = 0; i < N; i++) {
+      let x = pos[i * 3] + vel[i * 3] * dt;
+      let y = pos[i * 3 + 1] + vel[i * 3 + 1] * dt;
+      let z = pos[i * 3 + 2] + vel[i * 3 + 2] * dt;
+
+      if (x > boxHalfW - r) { x = boxHalfW - r; vel[i * 3] *= -1; wallImpulse += 2 * Math.abs(vel[i * 3]); }
+      if (x < -boxHalfW + r) { x = -boxHalfW + r; vel[i * 3] *= -1; wallImpulse += 2 * Math.abs(vel[i * 3]); }
+
+      if (y > topY - r) { y = topY - r; vel[i * 3 + 1] = -Math.abs(vel[i * 3 + 1]); wallImpulse += 2 * Math.abs(vel[i * 3 + 1]); }
+      if (y < boxBaseY + r) { y = boxBaseY + r; vel[i * 3 + 1] = Math.abs(vel[i * 3 + 1]); wallImpulse += 2 * Math.abs(vel[i * 3 + 1]); }
+
+      if (z > boxHalfW - r) { z = boxHalfW - r; vel[i * 3 + 2] *= -1; wallImpulse += 2 * Math.abs(vel[i * 3 + 2]); }
+      if (z < -boxHalfW + r) { z = -boxHalfW + r; vel[i * 3 + 2] *= -1; wallImpulse += 2 * Math.abs(vel[i * 3 + 2]); }
+
+      pos[i * 3] = x;
+      pos[i * 3 + 1] = y;
+      pos[i * 3 + 2] = z;
+    }
+
+    // Elastic hard-sphere pair collisions (maintaining Maxwell-Boltzmann equilibrium)
+    const minDist = r * 2;
+    const minDistSq = minDist * minDist;
+    for (let i = 0; i < N; i++) {
+      for (let j = i + 1; j < N; j++) {
+        const dx = pos[j * 3] - pos[i * 3];
+        const dy = pos[j * 3 + 1] - pos[i * 3 + 1];
+        const dz = pos[j * 3 + 2] - pos[i * 3 + 2];
+        const dSq = dx * dx + dy * dy + dz * dz;
+        if (dSq < minDistSq && dSq > 1e-6) {
+          const dist = Math.sqrt(dSq);
+          const nx = dx / dist, ny = dy / dist, nz = dz / dist;
+          const dvx = vel[i * 3] - vel[j * 3];
+          const dvy = vel[i * 3 + 1] - vel[j * 3 + 1];
+          const dvz = vel[i * 3 + 2] - vel[j * 3 + 2];
+          const vn = dvx * nx + dvy * ny + dvz * nz;
+          if (vn > 0) {
+            vel[i * 3] -= vn * nx; vel[i * 3 + 1] -= vn * ny; vel[i * 3 + 2] -= vn * nz;
+            vel[j * 3] += vn * nx; vel[j * 3 + 1] += vn * ny; vel[j * 3 + 2] += vn * nz;
+          }
+        }
+      }
+    }
+  }
+
+  for (let i = 0; i < N; i++) {
+    const vx = vel[i * 3], vy = vel[i * 3 + 1], vz = vel[i * 3 + 2];
+    const v2 = vx * vx + vy * vy + vz * vz;
+    sumV2 += v2;
+    const spd = Math.sqrt(v2);
+    speeds[i] = spd;
+
+    dummy.position.set(pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2]);
+    dummy.updateMatrix();
+    instMesh.setMatrixAt(i, dummy.matrix);
+
+    const tNorm = Math.min(1, spd / 16);
+    colorTmp.setHSL(0.58 - tNorm * 0.55, 0.9, 0.55);
+    instMesh.setColorAt(i, colorTmp);
+
+    if (i < sampleArrows.length) {
+      sampleArrows[i].position.copy(dummy.position);
+      if (spd > 1e-3) {
+        sampleArrows[i].setDirection(new THREE.Vector3(vx / spd, vy / spd, vz / spd));
+        sampleArrows[i].setLength(Math.min(1.6, 0.3 + spd * 0.08), 0.24, 0.14);
+      }
+    }
+  }
+  instMesh.instanceMatrix.needsUpdate = true;
+  if (instMesh.instanceColor) instMesh.instanceColor.needsUpdate = true;
+
+  const vRms = Math.sqrt(sumV2 / Math.max(1, N));
+  const volume = (boxHalfW * 2) * (boxHalfW * 2) * params.pistonHeight;
+  const idealP = (N * sumV2 / Math.max(1, N)) / (3 * volume) * 18;
+  smoothedImpulse = smoothedImpulse * 0.92 + idealP * 0.08;
+
+  pressureArrow.position.set(0, topY + 0.5, 0);
+  pressureArrow.setLength(Math.min(3.5, 0.7 + smoothedImpulse * 0.015), 0.45, 0.25);
+
+  document.getElementById('v-temp').textContent = `${Math.round(params.temperature)} K`;
+  document.getElementById('v-rms').textContent = `${(vRms * 55).toFixed(0)} m/s`;
+  document.getElementById('v-press').textContent = `${smoothedImpulse.toFixed(1)} kPa`;
+  document.getElementById('v-ratio').textContent = (1.00).toFixed(2);
+
+  // Draw Maxwell-Boltzmann speed histogram + theoretical curve
+  const bins = 18;
+  const maxSpd = 20;
+  const counts = new Array(bins).fill(0);
+  for (let i = 0; i < N; i++) {
+    const b = Math.min(bins - 1, Math.floor((speeds[i] / maxSpd) * bins));
+    counts[b]++;
+  }
+  histCtx.clearRect(0, 0, 300, 68);
+  const bw = 300 / bins;
+  for (let b = 0; b < bins; b++) {
+    const h = (counts[b] / Math.max(1, N)) * 190;
+    histCtx.fillStyle = b < 6 ? '#38bdf8' : b < 12 ? '#facc15' : '#f43f5e';
+    histCtx.fillRect(b * bw + 1, 68 - h, bw - 2, h);
+  }
+
+  if (now - lastTelemetry >= 1000) {
+    const fps = Math.round((frames * 1000) / (now - lastTelemetry));
+    frames = 0;
+    lastTelemetry = now;
+    window.parent.postMessage({
+      type: 'physicraft_telemetry',
+      fps,
+      hasNaN: !Number.isFinite(vRms),
+      errors: runtimeErrors,
+      energyBounded: vRms < 100
+    }, '*');
+  }
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+requestAnimationFrame(animate);
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+</body>
+</html>

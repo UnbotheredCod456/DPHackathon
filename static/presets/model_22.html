@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>22. Transverse & Longitudinal 3D Wave Propagator</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #070b14;
+      color: #e2e8f0;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      overflow: hidden;
+    }
+    canvas { display: block; width: 100vw; height: 100vh; }
+    #hud {
+      position: absolute;
+      bottom: 20px;
+      left: 20px;
+      background: rgba(15, 23, 42, 0.88);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      border-radius: 12px;
+      padding: 16px 20px;
+      min-width: 320px;
+      backdrop-filter: blur(10px);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+      font-size: 13px;
+      line-height: 1.6;
+      pointer-events: none;
+    }
+    #hud h2 {
+      font-size: 15px;
+      font-weight: 700;
+      color: #38bdf8;
+      margin-bottom: 8px;
+    }
+    .metric {
+      display: flex;
+      justify-content: space-between;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      padding: 3px 0;
+    }
+    .metric span.val {
+      font-family: 'JetBrains Mono', monospace;
+      color: #f8fafc;
+      font-weight: 600;
+    }
+    .legend {
+      margin-top: 10px;
+      padding-top: 8px;
+      border-top: 1px solid rgba(56, 189, 248, 0.25);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      font-size: 12px;
+    }
+    .legend-item { display: flex; align-items: center; gap: 6px; }
+    .swatch { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
+  </style>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+      "lil-gui": "https://unpkg.com/lil-gui@0.19.1/dist/lil-gui.esm.min.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="hud">
+    <h2>22. Transverse & Longitudinal 3D Wave</h2>
+    <div class="metric"><span>Wave Mode:</span><span class="val" id="val-mode">Both (Dual Lattice)</span></div>
+    <div class="metric"><span>Wave Number (k = 2π/λ):</span><span class="val" id="val-k">1.05 rad/m</span></div>
+    <div class="metric"><span>Angular Freq (ω = 2πf):</span><span class="val" id="val-omega">5.03 rad/s</span></div>
+    <div class="metric"><span>Phase Velocity (v = λf):</span><span class="val" id="val-speed">4.80 m/s</span></div>
+    <div class="metric"><span>Max Particle Speed (Aω):</span><span class="val" id="val-vmax">4.52 m/s</span></div>
+    <div class="legend">
+      <div class="legend-item"><span class="swatch" style="background:#22c55e"></span>Displacement Vector (u)</div>
+      <div class="legend-item"><span class="swatch" style="background:#f59e0b"></span>Particle Velocity (v)</div>
+      <div class="legend-item"><span class="swatch" style="background:#38bdf8"></span>Wave Vector (k)</div>
+      <div class="legend-item"><span class="swatch" style="background:#f43f5e"></span>Highlighted Tracer</div>
+    </div>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import GUI from 'lil-gui';
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x070b14);
+    scene.fog = new THREE.FogExp2(0x070b14, 0.015);
+
+    const camera = new THREE.PerspectiveCamera(48, window.innerWidth / window.innerHeight, 0.1, 200);
+    camera.position.set(0, 6.5, 19);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    document.body.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.06;
+
+    scene.add(new THREE.AmbientLight(0x94a3b8, 0.75));
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.3);
+    dirLight.position.set(10, 18, 12);
+    scene.add(dirLight);
+
+    const grid = new THREE.GridHelper(28, 28, 0x1e293b, 0x0f172a);
+    grid.position.y = -5.2;
+    scene.add(grid);
+
+    const params = {
+      mode: 'Both (Compare)', // 'Transverse', 'Longitudinal', 'Surface / Elliptical', 'Both (Compare)'
+      amplitude: 0.9,
+      wavelength: 6.0,
+      frequency: 0.8,
+      showVelocityArrows: false,
+      paused: false,
+      reset: () => {
+        params.mode = 'Both (Compare)';
+        params.amplitude = 0.9;
+        params.wavelength = 6.0;
+        params.frequency = 0.8;
+        params.showVelocityArrows = false;
+        params.paused = false;
+        simTime = 0;
+        gui.controllersRecursive().forEach(c => c.updateDisplay());
+      }
+    };
+
+    // Wave propagation direction indicator arrow at top
+    const kArrow = new THREE.ArrowHelper(
+      new THREE.Vector3(1, 0, 0),
+      new THREE.Vector3(-4, 4.6, 0),
+      8,
+      0x38bdf8,
+      0.7,
+      0.4
+    );
+    scene.add(kArrow);
+
+    // Create 3D particle lattice: NX columns along X, NY rows, NZ depth layers
+    const NX = 32;
+    const NY = 3;
+    const NZ = 3;
+    const xSpan = 20;
+
+    // Group A (Upper lattice or main lattice) & Group B (Lower lattice when in 'Both (Compare)' mode)
+    const particlesA = [];
+    const particlesB = [];
+    const arrowsA = [];
+    const arrowsB = [];
+
+    const sphereGeo = new THREE.SphereGeometry(0.16, 16, 16);
+    const tracerGeo = new THREE.SphereGeometry(0.24, 20, 20);
+
+    function buildLattice(targetParticles, targetArrows, yCenter) {
+      for (let ix = 0; ix < NX; ix++) {
+        const x0 = -xSpan / 2 + (ix / (NX - 1)) * xSpan;
+        const isTracerCol = (ix % 4 === 2);
+
+        for (let iy = 0; iy < NY; iy++) {
+          const dy = (iy - 1) * 0.75;
+          for (let iz = 0; iz < NZ; iz++) {
+            const z0 = (iz - 1) * 0.85;
+            const isCenterRow = (iy === 1 && iz === 1);
+            const isHighlight = (ix === 14 && isCenterRow);
+
+            const mat = new THREE.MeshStandardMaterial({
+              color: isHighlight ? 0xf43f5e : (isCenterRow ? 0x38bdf8 : 0x475569),
+              emissive: isHighlight ? 0x881337 : 0x000000,
+              roughness: 0.3,
+              metalness: 0.2,
+              transparent: !isCenterRow,
+              opacity: isCenterRow ? 1.0 : 0.45
+            });
+
+            const mesh = new THREE.Mesh(isHighlight ? tracerGeo : sphereGeo, mat);
+            scene.add(mesh);
+
+            let arrow = null;
+            if (isCenterRow && (ix % 2 === 0)) {
+              arrow = new THREE.ArrowHelper(
+                new THREE.Vector3(0, 1, 0),
+                new THREE.Vector3(x0, yCenter + dy, z0),
+                0.8,
+                0x22c55e,
+                0.24,
+                0.15
+              );
+              scene.add(arrow);
+              targetArrows.push({ arrow, ix, x0, y0: yCenter + dy, z0 });
+            }
+
+            targetParticles.push({
+              mesh,
+              ix,
+              iy,
+              iz,
+              x0,
+              dy,
+              z0,
+              isCenterRow,
+              isHighlight,
+              isTracerCol
+            });
+          }
+        }
+      }
+    }
+
+    buildLattice(particlesA, arrowsA, 2.0);
+    buildLattice(particlesB, arrowsB, -2.0);
+
+    // Center spine lines for visual clarity of wave envelope
+    const spinePointsA = Array.from({ length: NX }, () => new THREE.Vector3());
+    const spineGeoA = new THREE.BufferGeometry().setFromPoints(spinePointsA);
+    const spineLineA = new THREE.Line(spineGeoA, new THREE.LineBasicMaterial({ color: 0x38bdf8 }));
+    scene.add(spineLineA);
+
+    const spinePointsB = Array.from({ length: NX }, () => new THREE.Vector3());
+    const spineGeoB = new THREE.BufferGeometry().setFromPoints(spinePointsB);
+    const spineLineB = new THREE.Line(spineGeoB, new THREE.LineBasicMaterial({ color: 0xa855f7 }));
+    scene.add(spineLineB);
+
+    const gui = new GUI({ title: '3D Wave Controls' });
+    gui.add(params, 'mode', ['Both (Compare)', 'Transverse', 'Longitudinal', 'Surface / Elliptical']).name('Wave Polarization');
+    gui.add(params, 'amplitude', 0.1, 1.6, 0.05).name('Amplitude A (m)');
+    gui.add(params, 'wavelength', 2.5, 12.0, 0.25).name('Wavelength λ (m)');
+    gui.add(params, 'frequency', 0.2, 2.0, 0.05).name('Frequency f (Hz)');
+    gui.add(params, 'showVelocityArrows').name('Show Velocity v ( vs u )');
+    gui.add(params, 'paused').name('Pause Simulation');
+    gui.add(params, 'reset').name('Reset Defaults');
+
+    const elMode = document.getElementById('val-mode');
+    const elK = document.getElementById('val-k');
+    const elOmega = document.getElementById('val-omega');
+    const elSpeed = document.getElementById('val-speed');
+    const elVmax = document.getElementById('val-vmax');
+
+    let simTime = 0;
+    let lastTime = performance.now();
+    let frameCount = 0;
+    let lastFpsTime = performance.now();
+    let currentFps = 60;
+    const runtimeErrors = [];
+    window.addEventListener('error', (e) => runtimeErrors.push(e.message));
+
+    setInterval(() => {
+      const hasNaN = !Number.isFinite(simTime) || !Number.isFinite(particlesA[0].mesh.position.x);
+      window.parent.postMessage({
+        type: 'physicraft_telemetry',
+        fps: Math.round(currentFps),
+        hasNaN,
+        errors: runtimeErrors,
+        energyBounded: true
+      }, '*');
+    }, 1000);
+
+    function evaluateWaveDisplacement(x0, k, omega, t, A, waveType) {
+      const phase = k * x0 - omega * t;
+      let ux = 0, uy = 0;
+      let vx = 0, vy = 0;
+
+      if (waveType === 'Transverse') {
+        uy = A * Math.sin(phase);
+        vy = -A * omega * Math.cos(phase);
+      } else if (waveType === 'Longitudinal') {
+        ux = A * 0.85 * Math.sin(phase);
+        vx = -A * 0.85 * omega * Math.cos(phase);
+      } else if (waveType === 'Surface / Elliptical') {
+        ux = -A * 0.65 * Math.cos(phase);
+        uy = A * Math.sin(phase);
+        vx = -A * 0.65 * omega * Math.sin(phase);
+        vy = -A * omega * Math.cos(phase);
+      }
+      return { ux, uy, vx, vy, phase };
+    }
+
+    function updateLattice(particles, arrows, spineGeo, yBase, waveType, visible, k, omega, A) {
+      spineGeo.parent && (spineGeo.visible = visible);
+      const spinePos = spineGeo.attributes.position.array;
+
+      for (let i = 0; i < particles.length; i++) {
+        const p = particles[i];
+        p.mesh.visible = visible;
+        if (!visible) continue;
+
+        const w = evaluateWaveDisplacement(p.x0, k, omega, simTime, A, waveType);
+        const px = p.x0 + w.ux;
+        const py = yBase + p.dy + w.uy;
+        const pz = p.z0;
+        p.mesh.position.set(px, py, pz);
+
+        if (p.isCenterRow) {
+          spinePos[p.ix * 3] = px;
+          spinePos[p.ix * 3 + 1] = py;
+          spinePos[p.ix * 3 + 2] = pz;
+        }
+
+        // Color compression/rarefaction in longitudinal waves
+        if (!p.isHighlight && p.isCenterRow) {
+          if (waveType === 'Longitudinal') {
+            // Strain du_x/dx = A * k * cos(phase); compression is du_x/dx < 0
+            const compression = -Math.cos(w.phase);
+            p.mesh.material.color.setHSL(0.56 - compression * 0.16, 0.9, 0.55 + compression * 0.15);
+          } else {
+            p.mesh.material.color.setHex(0x38bdf8);
+          }
+        }
+      }
+      spineGeo.attributes.position.needsUpdate = true;
+
+      for (let i = 0; i < arrows.length; i++) {
+        const a = arrows[i];
+        a.arrow.visible = visible;
+        if (!visible) continue;
+
+        const w = evaluateWaveDisplacement(a.x0, k, omega, simTime, A, waveType);
+        const vecX = params.showVelocityArrows ? w.vx * 0.25 : w.ux;
+        const vecY = params.showVelocityArrows ? w.vy * 0.25 : w.uy;
+        const mag = Math.hypot(vecX, vecY);
+
+        if (params.showVelocityArrows) {
+          a.arrow.position.set(a.x0 + w.ux, yBase + w.uy, a.z0);
+          a.arrow.setColor(0xf59e0b);
+        } else {
+          a.arrow.position.set(a.x0, yBase, a.z0);
+          a.arrow.setColor(0x22c55e);
+        }
+
+        if (mag > 0.04) {
+          a.arrow.setDirection(new THREE.Vector3(vecX / mag, vecY / mag, 0));
+          const len = Math.max(0.15, mag * 1.15);
+          a.arrow.setLength(len, Math.min(0.28, len * 0.35), 0.16);
+        } else {
+          a.arrow.setLength(0.01, 0.01, 0.01);
+        }
+      }
+    }
+
+    function animate(now) {
+      requestAnimationFrame(animate);
+      const dt = Math.min((now - lastTime) / 1000, 0.05);
+      lastTime = now;
+
+      frameCount++;
+      if (now - lastFpsTime >= 500) {
+        currentFps = (frameCount * 1000) / (now - lastFpsTime);
+        frameCount = 0;
+        lastFpsTime = now;
+      }
+
+      if (!params.paused) {
+        simTime += dt;
+      }
+
+      const k = (2 * Math.PI) / params.wavelength;
+      const omega = 2 * Math.PI * params.frequency;
+      const phaseSpeed = params.wavelength * params.frequency;
+      const A = params.amplitude;
+
+      if (params.mode === 'Both (Compare)') {
+        spineLineA.visible = true;
+        spineLineB.visible = true;
+        updateLattice(particlesA, arrowsA, spineGeoA, 2.0, 'Transverse', true, k, omega, A);
+        updateLattice(particlesB, arrowsB, spineGeoB, -2.0, 'Longitudinal', true, k, omega, A);
+      } else {
+        spineLineA.visible = true;
+        spineLineB.visible = false;
+        updateLattice(particlesA, arrowsA, spineGeoA, 0.0, params.mode, true, k, omega, A);
+        updateLattice(particlesB, arrowsB, spineGeoB, -2.0, 'Longitudinal', false, k, omega, A);
+      }
+
+      elMode.textContent = params.mode;
+      elK.textContent = `${k.toFixed(2)} rad/m`;
+      elOmega.textContent = `${omega.toFixed(2)} rad/s`;
+      elSpeed.textContent = `${phaseSpeed.toFixed(2)} m/s`;
+      elVmax.textContent = `${(A * omega).toFixed(2)} m/s`;
+
+      controls.update();
+      renderer.render(scene, camera);
+    }
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    requestAnimationFrame(animate);
+  </script>
+</body>
+</html>

@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>38. Faraday's Law & Lenz's Law: Eddy Current Magnetic Braking</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #070b14; color: #e2e8f0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; overflow: hidden; }
+    canvas { display: block; width: 100vw; height: 100vh; }
+    #hud {
+      position: fixed; bottom: 16px; left: 16px; z-index: 10;
+      background: rgba(10, 16, 30, 0.88); backdrop-filter: blur(10px);
+      border: 1px solid rgba(56, 189, 248, 0.28); border-radius: 12px;
+      padding: 14px 18px; min-width: 320px; box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+      font-size: 12.5px; line-height: 1.55;
+    }
+    #hud h2 { font-size: 14px; font-weight: 700; color: #38bdf8; margin-bottom: 8px; }
+    .row { display: flex; justify-content: space-between; gap: 16px; font-variant-numeric: tabular-nums; }
+    .lbl { color: #94a3b8; }
+    .val { color: #f8fafc; font-weight: 600; }
+    .legend { margin-top: 10px; padding-top: 8px; border-top: 1px solid rgba(148,163,184,0.18); display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; font-size: 11.5px; }
+    .leg-item { display: flex; align-items: center; gap: 6px; color: #cbd5e1; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  </style>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+      "lil-gui": "https://unpkg.com/lil-gui@0.19.1/dist/lil-gui.esm.min.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="hud">
+    <h2>38. Faraday &amp; Lenz's Law: Magnetic Braking</h2>
+    <div class="row"><span class="lbl">Magnet Altitude y:</span><span class="val" id="yVal">0.00 m</span></div>
+    <div class="row"><span class="lbl">Velocity v_y:</span><span class="val" id="vyVal">0.00 m/s</span></div>
+    <div class="row"><span class="lbl">Magnetic Flux Φ_B:</span><span class="val" id="fluxVal">0.000 Wb</span></div>
+    <div class="row"><span class="lbl">Induced EMF ε = -dΦ/dt:</span><span class="val" id="emfVal">0.000 V</span></div>
+    <div class="row"><span class="lbl">Eddy Current I_ind:</span><span class="val" id="currVal">0.00 A</span></div>
+    <div class="row"><span class="lbl">Lenz Braking Force F_B:</span><span class="val" id="fbVal">0.00 N</span></div>
+    <div class="row"><span class="lbl">Joule Heat Dissipated:</span><span class="val" id="heatVal">0.00 J</span></div>
+    <div class="legend">
+      <div class="leg-item"><span class="dot" style="background:#ef4444"></span>Gravity m·g</div>
+      <div class="leg-item"><span class="dot" style="background:#38bdf8"></span>Lenz Force F_Lenz</div>
+      <div class="leg-item"><span class="dot" style="background:#22c55e"></span>Velocity v</div>
+      <div class="leg-item"><span class="dot" style="background:#f59e0b"></span>Induced Eddy Current I</div>
+    </div>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import GUI from 'lil-gui';
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x070b14);
+    scene.fog = new THREE.FogExp2(0x070b14, 0.015);
+
+    const camera = new THREE.PerspectiveCamera(48, window.innerWidth / window.innerHeight, 0.1, 200);
+    camera.position.set(11, 6, 15);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    document.body.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.06;
+
+    scene.add(new THREE.AmbientLight(0x94a3b8, 0.75));
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.4);
+    dirLight.position.set(10, 20, 14);
+    scene.add(dirLight);
+
+    const grid = new THREE.GridHelper(28, 28, 0x1e293b, 0x0f172a);
+    grid.position.y = -7;
+    scene.add(grid);
+
+    // Conductive Copper Ring at y = 0
+    const RING_R = 2.6;
+    const ringGeo = new THREE.TorusGeometry(RING_R, 0.34, 28, 80);
+    const ringMat = new THREE.MeshStandardMaterial({
+      color: 0xd97706, emissive: 0xf59e0b, emissiveIntensity: 0.05, metalness: 0.75, roughness: 0.25
+    });
+    const copperRing = new THREE.Mesh(ringGeo, ringMat);
+    copperRing.rotation.x = Math.PI / 2;
+    scene.add(copperRing);
+
+    // Eddy current tangential arrows around the conductive ring
+    const currentArrows = [];
+    const numCurrArrows = 8;
+    for (let i = 0; i < numCurrArrows; i++) {
+      const ang = (i / numCurrArrows) * Math.PI * 2;
+      const origin = new THREE.Vector3(RING_R * Math.cos(ang), 0, RING_R * Math.sin(ang));
+      const dir = new THREE.Vector3(-Math.sin(ang), 0, Math.cos(ang));
+      const arr = new THREE.ArrowHelper(dir, origin, 1.1, 0xfbbf24, 0.35, 0.22);
+      scene.add(arr);
+      currentArrows.push({ arrow: arr, ang });
+    }
+
+    // Falling Bar Magnet Group (North = Red bottom, South = Blue top)
+    const magnetGroup = new THREE.Group();
+    const halfGeo = new THREE.CylinderGeometry(0.65, 0.65, 1.3, 32);
+    const northMat = new THREE.MeshStandardMaterial({ color: 0xef4444, roughness: 0.3, metalness: 0.4 });
+    const southMat = new THREE.MeshStandardMaterial({ color: 0x3b82f6, roughness: 0.3, metalness: 0.4 });
+    const northMesh = new THREE.Mesh(halfGeo, northMat);
+    const southMesh = new THREE.Mesh(halfGeo, southMat);
+    northMesh.position.y = -0.65;
+    southMesh.position.y = 0.65;
+    magnetGroup.add(northMesh, southMesh);
+
+    // Dipole Magnetic Field Loops attached to the Bar Magnet
+    const dipoleMat = new THREE.LineBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.4 });
+    for (let k = 0; k < 8; k++) {
+      const phi = (k / 8) * Math.PI * 2;
+      const loopPts = [];
+      for (let t = -Math.PI * 0.82; t <= Math.PI * 0.82; t += 0.1) {
+        const r = 3.2 * Math.cos(t) * Math.cos(t);
+        const x = r * Math.sin(t) * Math.cos(phi);
+        const z = r * Math.sin(t) * Math.sin(phi);
+        const y = -3.2 * Math.cos(t) * (1 - 0.55 * Math.cos(t) * Math.cos(t));
+        loopPts.push(new THREE.Vector3(x, y, z));
+      }
+      const lGeo = new THREE.BufferGeometry().setFromPoints(loopPts);
+      magnetGroup.add(new THREE.Line(lGeo, dipoleMat));
+    }
+    scene.add(magnetGroup);
+
+    // Dynamic Vectors on Magnet
+    const fgArrow = new THREE.ArrowHelper(new THREE.Vector3(0, -1, 0), new THREE.Vector3(), 2, 0xef4444, 0.45, 0.26);
+    const fbArrow = new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), new THREE.Vector3(), 2, 0x38bdf8, 0.45, 0.26);
+    const vArrow = new THREE.ArrowHelper(new THREE.Vector3(0, -1, 0), new THREE.Vector3(), 2, 0x22c55e, 0.45, 0.26);
+    scene.add(fgArrow, fbArrow, vArrow);
+
+    const params = {
+      dipoleM: 8.5,
+      resistance: 0.35,
+      mass: 1.2,
+      gravity: 9.81,
+      loopDrop: true,
+      paused: false,
+      reset: () => resetSim()
+    };
+
+    let y = 6.2;
+    let vy = 0.0;
+    let jouleHeat = 0.0;
+
+    function resetSim() {
+      y = 6.2;
+      vy = 0.0;
+      jouleHeat = 0.0;
+    }
+
+    // Dipole flux through ring of radius R at y=0 when magnet is at height y:
+    // Phi(y) = C * m * R^2 / (R^2 + y^2)^(3/2)
+    // dPhi/dy = -3 * C * m * R^2 * y / (R^2 + y^2)^(5/2)
+    function computeFlux(yPos) {
+      const denom = Math.pow(RING_R * RING_R + yPos * yPos, 1.5);
+      return (params.dipoleM * RING_R * RING_R) / Math.max(1.5, denom);
+    }
+
+    function computeDFluxDy(yPos) {
+      const denom = Math.pow(RING_R * RING_R + yPos * yPos, 2.5);
+      return (-3.0 * params.dipoleM * RING_R * RING_R * yPos) / Math.max(1.5, denom);
+    }
+
+    // RK4 Integrator for y and vy with exact Lenz braking force F_Lenz = -(dPhi/dy)^2 * vy / R_elec
+    function stepRK4(dt) {
+      function accel(yState, vState) {
+        const dPhidy = computeDFluxDy(yState);
+        const fLenz = -(dPhidy * dPhidy * vState) / Math.max(0.02, params.resistance);
+        return -params.gravity + fLenz / params.mass;
+      }
+
+      const k1y = vy;
+      const k1v = accel(y, vy);
+
+      const k2y = vy + 0.5 * dt * k1v;
+      const k2v = accel(y + 0.5 * dt * k1y, vy + 0.5 * dt * k1v);
+
+      const k3y = vy + 0.5 * dt * k2v;
+      const k3v = accel(y + 0.5 * dt * k2y, vy + 0.5 * dt * k2v);
+
+      const k4y = vy + dt * k3v;
+      const k4v = accel(y + dt * k3y, vy + dt * k3v);
+
+      y += (dt / 6) * (k1y + 2 * k2y + 2 * k3y + k4y);
+      vy += (dt / 6) * (k1v + 2 * k2v + 2 * k3v + k4v);
+
+      const dPhidy = computeDFluxDy(y);
+      const emf = -dPhidy * vy;
+      const current = emf / Math.max(0.02, params.resistance);
+      jouleHeat += current * current * Math.max(0.02, params.resistance) * dt;
+
+      if (y < -6.5) {
+        if (params.loopDrop) {
+          y = 6.2;
+          vy = 0.0;
+        } else {
+          y = -6.5;
+          vy = 0.0;
+        }
+      }
+    }
+
+    const gui = new GUI({ title: 'Faraday & Lenz Braking' });
+    gui.add(params, 'dipoleM', 1.0, 16.0, 0.5).name('Dipole Moment μ');
+    gui.add(params, 'resistance', 0.05, 2.5, 0.05).name('Ring Resistance R (Ω)');
+    gui.add(params, 'mass', 0.4, 3.0, 0.1).name('Magnet Mass m (kg)');
+    gui.add(params, 'gravity', 1.0, 15.0, 0.5).name('Gravity g (m/s²)');
+    gui.add(params, 'loopDrop').name('Auto-Repeat Drop');
+    gui.add(params, 'paused').name('Pause');
+    gui.add(params, 'reset').name('Drop From Top');
+
+    const yValEl = document.getElementById('yVal');
+    const vyValEl = document.getElementById('vyVal');
+    const fluxValEl = document.getElementById('fluxVal');
+    const emfValEl = document.getElementById('emfVal');
+    const currValEl = document.getElementById('currVal');
+    const fbValEl = document.getElementById('fbVal');
+    const heatValEl = document.getElementById('heatVal');
+
+    let frameCount = 0;
+    let lastTeleTime = performance.now();
+    const runtimeErrors = [];
+    window.addEventListener('error', (e) => runtimeErrors.push(e.message));
+
+    function updateSceneAndHUD() {
+      magnetGroup.position.set(0, y, 0);
+
+      const flux = computeFlux(y);
+      const dPhidy = computeDFluxDy(y);
+      const emf = -dPhidy * vy;
+      const current = emf / Math.max(0.02, params.resistance);
+      const fLenz = -(dPhidy * dPhidy * vy) / Math.max(0.02, params.resistance);
+      const fg = -params.mass * params.gravity;
+
+      // Glow ring proportional to eddy current magnitude
+      const absI = Math.abs(current);
+      ringMat.emissiveIntensity = Math.min(2.2, 0.08 + absI * 0.12);
+
+      // Update Eddy current arrows around ring
+      currentArrows.forEach(({ arrow, ang }) => {
+        if (absI < 0.08) {
+          arrow.visible = false;
+        } else {
+          arrow.visible = true;
+          const sign = current >= 0 ? 1 : -1;
+          const dir = new THREE.Vector3(-Math.sin(ang) * sign, 0, Math.cos(ang) * sign);
+          arrow.setDirection(dir);
+          arrow.setLength(Math.min(1.6, 0.35 + absI * 0.08), 0.32, 0.2);
+        }
+      });
+
+      // Update Force & Velocity vectors
+      fgArrow.position.set(-0.9, y, 0);
+      fgArrow.setDirection(new THREE.Vector3(0, -1, 0));
+      fgArrow.setLength(Math.min(3.5, Math.abs(fg) * 0.16), 0.4, 0.24);
+
+      fbArrow.position.set(0.9, y, 0);
+      if (Math.abs(fLenz) > 0.05) {
+        fbArrow.visible = true;
+        fbArrow.setDirection(new THREE.Vector3(0, fLenz >= 0 ? 1 : -1, 0));
+        fbArrow.setLength(Math.min(4.2, Math.abs(fLenz) * 0.16), 0.4, 0.24);
+      } else fbArrow.visible = false;
+
+      vArrow.position.set(0, y - 1.4, 0);
+      if (Math.abs(vy) > 0.05) {
+        vArrow.visible = true;
+        vArrow.setDirection(new THREE.Vector3(0, vy >= 0 ? 1 : -1, 0));
+        vArrow.setLength(Math.min(3.5, Math.abs(vy) * 0.35), 0.4, 0.24);
+      } else vArrow.visible = false;
+
+      yValEl.textContent = `${y.toFixed(2)} m`;
+      vyValEl.textContent = `${vy.toFixed(2)} m/s`;
+      fluxValEl.textContent = `${flux.toFixed(3)} Wb`;
+      emfValEl.textContent = `${emf.toFixed(3)} V`;
+      currValEl.textContent = `${current.toFixed(2)} A`;
+      fbValEl.textContent = `+${fLenz.toFixed(2)} N`;
+      heatValEl.textContent = `${jouleHeat.toFixed(2)} J`;
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+      frameCount++;
+
+      if (!params.paused) {
+        const subSteps = 6;
+        const dt = (1 / 60) / subSteps;
+        for (let i = 0; i < subSteps; i++) {
+          stepRK4(dt);
+        }
+      }
+
+      updateSceneAndHUD();
+      controls.update();
+      renderer.render(scene, camera);
+
+      const now = performance.now();
+      if (now - lastTeleTime >= 1000) {
+        const fps = Math.round((frameCount * 1000) / (now - lastTeleTime));
+        const hasNaN = Number.isNaN(y) || Number.isNaN(vy);
+        window.parent.postMessage({
+          type: 'physicraft_telemetry',
+          fps,
+          hasNaN,
+          errors: runtimeErrors,
+          energyBounded: Math.abs(vy) < 100
+        }, '*');
+        frameCount = 0;
+        lastTeleTime = now;
+      }
+    }
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    animate();
+  </script>
+</body>
+</html>

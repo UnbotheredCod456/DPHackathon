@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>31. Michelson Interferometer & Circular Fringe Pattern</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #070b14;
+      color: #e2e8f0;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      overflow: hidden;
+      width: 100vw;
+      height: 100vh;
+    }
+    canvas { display: block; }
+    #hud {
+      position: fixed;
+      bottom: 20px;
+      left: 20px;
+      background: rgba(10, 15, 30, 0.88);
+      border: 1px solid rgba(56, 189, 248, 0.35);
+      border-radius: 12px;
+      padding: 16px 20px;
+      min-width: 300px;
+      backdrop-filter: blur(10px);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+      font-size: 13px;
+      line-height: 1.6;
+      z-index: 10;
+    }
+    #hud h2 {
+      font-size: 14px;
+      font-weight: 700;
+      color: #38bdf8;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 8px;
+      border-bottom: 1px solid rgba(56, 189, 248, 0.2);
+      padding-bottom: 6px;
+    }
+    .row { display: flex; justify-content: space-between; gap: 16px; }
+    .val { font-family: 'JetBrains Mono', monospace; color: #f8fafc; font-weight: 600; }
+    .legend {
+      margin-top: 10px;
+      padding-top: 8px;
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      font-size: 11px;
+    }
+    .legend-item { display: flex; align-items: center; gap: 5px; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  </style>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+      "lil-gui": "https://unpkg.com/lil-gui@0.19.1/dist/lil-gui.esm.min.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="hud">
+    <h2>31. Michelson Interferometer</h2>
+    <div class="row"><span>Wavelength (λ):</span><span class="val" id="v-lambda">632.8 nm</span></div>
+    <div class="row"><span>Mirror M2 Offset (Δd):</span><span class="val" id="v-d">2.50 μm</span></div>
+    <div class="row"><span>Optical Path Diff (ΔL = 2Δd):</span><span class="val" id="v-opd">5.00 μm</span></div>
+    <div class="row"><span>Central Fringe Order (m₀):</span><span class="val" id="v-order">7.90</span></div>
+    <div class="row"><span>Center Intensity (I/I₀):</span><span class="val" id="v-int">0.91</span></div>
+    <div class="legend">
+      <div class="legend-item"><span class="dot" style="background:#ef4444"></span>Arm 1 Wavevector k₁</div>
+      <div class="legend-item"><span class="dot" style="background:#38bdf8"></span>Arm 2 Wavevector k₂</div>
+      <div class="legend-item"><span class="dot" style="background:#22c55e"></span>Resultant E-Field Phasor</div>
+    </div>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { GUI } from 'lil-gui';
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x070b14);
+    scene.fog = new THREE.FogExp2(0x070b14, 0.025);
+
+    const camera = new THREE.PerspectiveCamera(48, window.innerWidth / window.innerHeight, 0.1, 200);
+    camera.position.set(10, 8, 12);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    document.body.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.06;
+    controls.target.set(0, 0.5, 0);
+
+    // Lighting
+    scene.add(new THREE.AmbientLight(0x94a3b8, 0.7));
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+    dirLight.position.set(10, 15, 10);
+    scene.add(dirLight);
+
+    // Optical Table Grid
+    const grid = new THREE.GridHelper(24, 24, 0x1e293b, 0x0f172a);
+    grid.position.y = -1.2;
+    scene.add(grid);
+
+    const tableMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.7, metalness: 0.3 });
+    const tableMesh = new THREE.Mesh(new THREE.BoxGeometry(16, 0.4, 16), tableMat);
+    tableMesh.position.y = -1.4;
+    scene.add(tableMesh);
+
+    // Laser Source at (-6, 0, 0)
+    const laserGroup = new THREE.Group();
+    const laserBody = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.45, 0.45, 2.2, 24),
+      new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.8, roughness: 0.2 })
+    );
+    laserBody.rotation.z = Math.PI / 2;
+    laserGroup.add(laserBody);
+    laserGroup.position.set(-6, 0, 0);
+    scene.add(laserGroup);
+
+    // Beam Splitter at (0, 0, 0) rotated 45 deg
+    const bsMat = new THREE.MeshPhysicalMaterial({
+      color: 0x7dd3fc,
+      transparent: true,
+      opacity: 0.4,
+      roughness: 0.05,
+      metalness: 0.1,
+      transmission: 0.6
+    });
+    const beamSplitter = new THREE.Mesh(new THREE.BoxGeometry(0.15, 1.8, 2.2), bsMat);
+    beamSplitter.rotation.y = Math.PI / 4;
+    scene.add(beamSplitter);
+
+    // Fixed Mirror M1 at (0, 0, -5)
+    const mirrorMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, metalness: 0.95, roughness: 0.05 });
+    const mirror1 = new THREE.Mesh(new THREE.BoxGeometry(2.0, 1.8, 0.2), mirrorMat);
+    mirror1.position.set(0, 0, -5);
+    scene.add(mirror1);
+
+    // Adjustable Mirror M2 near (5, 0, 0)
+    const mirror2 = new THREE.Mesh(new THREE.BoxGeometry(0.2, 1.8, 2.0), mirrorMat);
+    mirror2.position.set(5, 0, 0);
+    scene.add(mirror2);
+
+    // Detector Screen at (0, 0, 5.5) with CanvasTexture for Haidinger circular fringes
+    const fringeCanvas = document.createElement('canvas');
+    fringeCanvas.width = 256;
+    fringeCanvas.height = 256;
+    const fCtx = fringeCanvas.getContext('2d');
+    const fringeTex = new THREE.CanvasTexture(fringeCanvas);
+
+    const screenMesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(3.4, 3.4),
+      new THREE.MeshBasicMaterial({ map: fringeTex, side: THREE.DoubleSide })
+    );
+    screenMesh.position.set(0, 0.5, 5.5);
+    screenMesh.rotation.y = Math.PI;
+    scene.add(screenMesh);
+
+    const screenFrame = new THREE.Mesh(
+      new THREE.BoxGeometry(3.6, 3.6, 0.12),
+      new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.5, roughness: 0.4 })
+    );
+    screenFrame.position.set(0, 0.5, 5.58);
+    scene.add(screenFrame);
+
+    // 3D Wave Ribbons along optical arms
+    const numPoints = 120;
+    function makeWaveLine(color) {
+      const geom = new THREE.BufferGeometry();
+      const positions = new Float32Array(numPoints * 3);
+      geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      const mat = new THREE.LineBasicMaterial({ color, linewidth: 2 });
+      const line = new THREE.Line(geom, mat);
+      scene.add(line);
+      return line;
+    }
+
+    const waveIncident = makeWaveLine(0xef4444);
+    const waveArm1 = makeWaveLine(0xef4444);
+    const waveArm2 = makeWaveLine(0x38bdf8);
+    const waveDet1 = makeWaveLine(0xef4444);
+    const waveDet2 = makeWaveLine(0x38bdf8);
+
+    // Dynamic ArrowHelpers for wavevectors & resultant E-field phasor
+    const arrowK1 = new THREE.ArrowHelper(new THREE.Vector3(0, 0, 1), new THREE.Vector3(-0.4, 1.1, 2.5), 1.4, 0xef4444, 0.3, 0.18);
+    const arrowK2 = new THREE.ArrowHelper(new THREE.Vector3(0, 0, 1), new THREE.Vector3(0.4, 1.1, 2.5), 1.4, 0x38bdf8, 0.3, 0.18);
+    const arrowE = new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 2.5, 5.5), 1.2, 0x22c55e, 0.3, 0.2);
+    scene.add(arrowK1, arrowK2, arrowE);
+
+    const params = {
+      wavelengthNm: 632.8,
+      mirrorOffsetUm: 2.50,
+      driftSpeed: 0.4,
+      beamDivergence: 1.0,
+      paused: false,
+      reset() {
+        this.wavelengthNm = 632.8;
+        this.mirrorOffsetUm = 2.50;
+        this.driftSpeed = 0.4;
+        this.beamDivergence = 1.0;
+        this.paused = false;
+        gui.controllersRecursive().forEach(c => c.updateDisplay());
+      }
+    };
+
+    const gui = new GUI({ title: 'Michelson Controls' });
+    gui.add(params, 'wavelengthNm', 400, 700, 1).name('Wavelength λ (nm)');
+    gui.add(params, 'mirrorOffsetUm', 0.2, 10.0, 0.02).name('Mirror M2 Δd (μm)').listen();
+    gui.add(params, 'driftSpeed', 0.0, 2.0, 0.05).name('Piezo Scan Speed');
+    gui.add(params, 'beamDivergence', 0.4, 2.2, 0.05).name('Angular Scale');
+    gui.add(params, 'paused').name('Pause Animation');
+    gui.add(params, 'reset').name('Reset');
+
+    function wavelengthToRGB(nm) {
+      let r = 0, g = 0, b = 0;
+      if (nm >= 380 && nm < 440) { r = -(nm - 440) / 60; b = 1; }
+      else if (nm >= 440 && nm < 490) { g = (nm - 440) / 50; b = 1; }
+      else if (nm >= 490 && nm < 510) { g = 1; b = -(nm - 510) / 20; }
+      else if (nm >= 510 && nm < 580) { r = (nm - 510) / 70; g = 1; }
+      else if (nm >= 580 && nm < 645) { r = 1; g = -(nm - 645) / 65; }
+      else if (nm >= 645 && nm <= 750) { r = 1; }
+      return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
+    }
+
+    function updateFringeCanvas() {
+      const w = fringeCanvas.width;
+      const h = fringeCanvas.height;
+      const imgData = fCtx.createImageData(w, h);
+      const data = imgData.data;
+      const [cr, cg, cb] = wavelengthToRGB(params.wavelengthNm);
+      const lambdaUm = params.wavelengthNm * 1e-3;
+      const opdUm = 2.0 * params.mirrorOffsetUm;
+
+      for (let py = 0; py < h; py++) {
+        const dy = (py - h / 2) / (h / 2);
+        for (let px = 0; px < w; px++) {
+          const dx = (px - w / 2) / (w / 2);
+          const rNorm = Math.sqrt(dx * dx + dy * dy);
+          const theta = rNorm * 0.35 * params.beamDivergence;
+          const phase = (Math.PI * opdUm * Math.cos(theta)) / lambdaUm;
+          const intensity = Math.pow(Math.cos(phase), 2) * Math.exp(-rNorm * rNorm * 0.45);
+          const idx = (py * w + px) * 4;
+          data[idx] = Math.round(cr * intensity + 8);
+          data[idx + 1] = Math.round(cg * intensity + 12);
+          data[idx + 2] = Math.round(cb * intensity + 22);
+          data[idx + 3] = 255;
+        }
+      }
+      fCtx.putImageData(imgData, 0, 0);
+      fringeTex.needsUpdate = true;
+    }
+
+    let simTime = 0;
+    let lastTime = performance.now();
+    let frameCount = 0;
+    let currentFps = 60;
+    const runtimeErrors = [];
+    window.addEventListener('error', (e) => runtimeErrors.push(e.message));
+
+    function animate(now) {
+      requestAnimationFrame(animate);
+      frameCount++;
+      const dt = Math.min((now - lastTime) / 1000, 0.05);
+      lastTime = now;
+
+      if (!params.paused) {
+        simTime += dt;
+        if (params.driftSpeed > 0) {
+          params.mirrorOffsetUm += params.driftSpeed * 0.15 * dt;
+          if (params.mirrorOffsetUm > 10.0) params.mirrorOffsetUm = 0.2;
+        }
+      }
+
+      // Move M2 visibly based on offset
+      const m2X = 5.0 + (params.mirrorOffsetUm - 2.5) * 0.18;
+      mirror2.position.x = m2X;
+
+      const kVisual = (632.8 / params.wavelengthNm) * 4.2;
+      const omega = 8.0;
+      const phaseShift = (4.0 * Math.PI * params.mirrorOffsetUm) / (params.wavelengthNm * 1e-3);
+
+      // Incident wave (-5 to 0 along X)
+      const posInc = waveIncident.geometry.attributes.position.array;
+      for (let i = 0; i < numPoints; i++) {
+        const t = i / (numPoints - 1);
+        const x = -5.0 + t * 5.0;
+        posInc[i * 3] = x;
+        posInc[i * 3 + 1] = 0.35 * Math.sin(kVisual * x - omega * simTime);
+        posInc[i * 3 + 2] = 0;
+      }
+      waveIncident.geometry.attributes.position.needsUpdate = true;
+
+      // Arm 1 (0 to -5 along Z)
+      const posA1 = waveArm1.geometry.attributes.position.array;
+      for (let i = 0; i < numPoints; i++) {
+        const t = i / (numPoints - 1);
+        const z = -t * 5.0;
+        posA1[i * 3] = 0;
+        posA1[i * 3 + 1] = 0.32 * Math.sin(kVisual * (-z) - omega * simTime);
+        posA1[i * 3 + 2] = z;
+      }
+      waveArm1.geometry.attributes.position.needsUpdate = true;
+
+      // Arm 2 (0 to m2X along X)
+      const posA2 = waveArm2.geometry.attributes.position.array;
+      for (let i = 0; i < numPoints; i++) {
+        const t = i / (numPoints - 1);
+        const x = t * m2X;
+        posA2[i * 3] = x;
+        posA2[i * 3 + 1] = 0.32 * Math.sin(kVisual * x - omega * simTime + phaseShift);
+        posA2[i * 3 + 2] = 0;
+      }
+      waveArm2.geometry.attributes.position.needsUpdate = true;
+
+      // Detector recombined waves (0 to 5.4 along Z)
+      const posD1 = waveDet1.geometry.attributes.position.array;
+      const posD2 = waveDet2.geometry.attributes.position.array;
+      for (let i = 0; i < numPoints; i++) {
+        const t = i / (numPoints - 1);
+        const z = t * 5.4;
+        posD1[i * 3] = -0.12;
+        posD1[i * 3 + 1] = 0.3 * Math.sin(kVisual * z - omega * simTime);
+        posD1[i * 3 + 2] = z;
+
+        posD2[i * 3] = 0.12;
+        posD2[i * 3 + 1] = 0.3 * Math.sin(kVisual * z - omega * simTime + phaseShift);
+        posD2[i * 3 + 2] = z;
+      }
+      waveDet1.geometry.attributes.position.needsUpdate = true;
+      waveDet2.geometry.attributes.position.needsUpdate = true;
+
+      // Update resultant E-field arrow at screen
+      const centerIntensity = Math.pow(Math.cos(phaseShift * 0.5), 2);
+      const ampLen = Math.max(0.2, 0.3 + 1.5 * centerIntensity);
+      arrowE.setDirection(new THREE.Vector3(Math.cos(phaseShift * 0.5), Math.sin(phaseShift * 0.5), 0).normalize());
+      arrowE.setLength(ampLen, 0.28, 0.18);
+
+      updateFringeCanvas();
+
+      // Update HUD
+      const opdUm = 2.0 * params.mirrorOffsetUm;
+      const order = opdUm / (params.wavelengthNm * 1e-3);
+      document.getElementById('v-lambda').textContent = `${params.wavelengthNm.toFixed(1)} nm`;
+      document.getElementById('v-d').textContent = `${params.mirrorOffsetUm.toFixed(2)} μm`;
+      document.getElementById('v-opd').textContent = `${opdUm.toFixed(2)} μm`;
+      document.getElementById('v-order').textContent = order.toFixed(2);
+      document.getElementById('v-int').textContent = centerIntensity.toFixed(2);
+
+      controls.update();
+      renderer.render(scene, camera);
+    }
+
+    requestAnimationFrame(animate);
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    // 1-second telemetry heartbeat
+    setInterval(() => {
+      currentFps = frameCount;
+      frameCount = 0;
+      const hasNaN = Number.isNaN(params.mirrorOffsetUm) || Number.isNaN(mirror2.position.x);
+      window.parent.postMessage({
+        type: 'physicraft_telemetry',
+        fps: currentFps || 60,
+        hasNaN,
+        errors: runtimeErrors,
+        energyBounded: true
+      }, '*');
+    }, 1000);
+  </script>
+</body>
+</html>

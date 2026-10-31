@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>41. 3D Electromagnetic Plane Wave & Dipole Antenna Radiation Pattern</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #070b14; color: #e2e8f0; font-family: 'Inter', -apple-system, sans-serif; overflow: hidden; }
+    canvas { display: block; width: 100vw; height: 100vh; }
+    #hud {
+      position: absolute; bottom: 20px; left: 20px; width: 350px;
+      background: rgba(15, 23, 42, 0.88); backdrop-filter: blur(12px);
+      border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 12px;
+      padding: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+      font-size: 13px; line-height: 1.5; z-index: 10;
+    }
+    #hud h2 { font-size: 15px; color: #38bdf8; margin-bottom: 8px; font-weight: 600; }
+    .metric { display: flex; justify-content: space-between; margin: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.06); padding-bottom: 3px; }
+    .metric span.val { font-family: 'JetBrains Mono', monospace; color: #f8fafc; font-weight: 600; }
+    .legend { margin-top: 10px; display: flex; flex-direction: column; gap: 5px; font-size: 12px; }
+    .legend-item { display: flex; align-items: center; gap: 8px; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  </style>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+      "lil-gui": "https://unpkg.com/lil-gui@0.19.1/dist/lil-gui.esm.min.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="hud">
+    <h2>41. EM Plane Wave & Dipole Antenna</h2>
+    <div class="metric"><span>Wavelength (λ):</span><span class="val" id="m-lambda">4.00 m</span></div>
+    <div class="metric"><span>Frequency (f):</span><span class="val" id="m-freq">1.50 Hz</span></div>
+    <div class="metric"><span>Inst. E-Field (x=0):</span><span class="val" id="m-efield">0.00 V/m</span></div>
+    <div class="metric"><span>Inst. B-Field (x=0):</span><span class="val" id="m-bfield">0.00 μT</span></div>
+    <div class="metric"><span>Poynting Flux |S|:</span><span class="val" id="m-poynting">0.00 W/m²</span></div>
+    <div class="metric"><span>Avg Intensity ⟨S⟩:</span><span class="val" id="m-intensity">0.00 W/m²</span></div>
+    <div class="legend">
+      <div class="legend-item"><span class="dot" style="background:#ef4444"></span>Electric Field Vector E(x,t) [Y-axis]</div>
+      <div class="legend-item"><span class="dot" style="background:#38bdf8"></span>Magnetic Field Vector B(x,t) [Z-axis]</div>
+      <div class="legend-item"><span class="dot" style="background:#facc15"></span>Poynting Energy Flux S = (E × B)/μ₀ [X-axis]</div>
+      <div class="legend-item"><span class="dot" style="background:#a855f7"></span>Dipole Radiation Pattern (sin²θ Torus)</div>
+    </div>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import GUI from 'lil-gui';
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x070b14);
+    scene.fog = new THREE.FogExp2(0x070b14, 0.025);
+
+    const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 200);
+    camera.position.set(6, 7, 15);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    document.body.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.target.set(2, 0, 0);
+
+    // Lighting
+    scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
+    dirLight.position.set(10, 20, 15);
+    scene.add(dirLight);
+
+    // Grid & propagation axis
+    const grid = new THREE.GridHelper(30, 30, 0x1e293b, 0x0f172a);
+    grid.position.y = -4;
+    scene.add(grid);
+
+    const axisGeo = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(-8, 0, 0),
+      new THREE.Vector3(14, 0, 0)
+    ]);
+    const axisLine = new THREE.Line(axisGeo, new THREE.LineBasicMaterial({ color: 0x64748b }));
+    scene.add(axisLine);
+
+    // Dipole Antenna at x = -6
+    const dipoleGroup = new THREE.Group();
+    dipoleGroup.position.set(-6, 0, 0);
+    scene.add(dipoleGroup);
+
+    const rodGeo = new THREE.CylinderGeometry(0.08, 0.08, 1.8, 16);
+    const rodMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.8, roughness: 0.2 });
+    const upperRod = new THREE.Mesh(rodGeo, rodMat);
+    upperRod.position.y = 1.05;
+    const lowerRod = new THREE.Mesh(rodGeo, rodMat);
+    lowerRod.position.y = -1.05;
+    dipoleGroup.add(upperRod, lowerRod);
+
+    // Oscillating charges on dipole
+    const posCharge = new THREE.Mesh(
+      new THREE.SphereGeometry(0.22, 20, 20),
+      new THREE.MeshStandardMaterial({ color: 0xef4444, emissive: 0x991b1b })
+    );
+    const negCharge = new THREE.Mesh(
+      new THREE.SphereGeometry(0.22, 20, 20),
+      new THREE.MeshStandardMaterial({ color: 0x38bdf8, emissive: 0x075985 })
+    );
+    dipoleGroup.add(posCharge, negCharge);
+
+    // 3D Dipole Radiation Pattern (sin^2(theta) donut mesh around dipole)
+    function createDipolePatternGeometry(scaleRadius = 3.2) {
+      const uSteps = 48, vSteps = 32;
+      const positions = [];
+      const indices = [];
+      for (let i = 0; i <= vSteps; i++) {
+        const theta = (i / vSteps) * Math.PI; // polar angle from Y axis
+        const r = scaleRadius * Math.pow(Math.sin(theta), 2);
+        for (let j = 0; j <= uSteps; j++) {
+          const phi = (j / uSteps) * Math.PI * 2;
+          const x = r * Math.sin(theta) * Math.cos(phi);
+          const y = r * Math.cos(theta);
+          const z = r * Math.sin(theta) * Math.sin(phi);
+          positions.push(x, y, z);
+        }
+      }
+      for (let i = 0; i < vSteps; i++) {
+        for (let j = 0; j < uSteps; j++) {
+          const a = i * (uSteps + 1) + j;
+          const b = a + uSteps + 1;
+          indices.push(a, b, a + 1);
+          indices.push(b, b + 1, a + 1);
+        }
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+      geo.setIndex(indices);
+      geo.computeVertexNormals();
+      return geo;
+    }
+
+    const patternMesh = new THREE.Mesh(
+      createDipolePatternGeometry(3.2),
+      new THREE.MeshPhongMaterial({
+        color: 0xa855f7,
+        wireframe: true,
+        transparent: true,
+        opacity: 0.28
+      })
+    );
+    dipoleGroup.add(patternMesh);
+
+    // Expanding spherical wavefront rings from dipole
+    const numRings = 4;
+    const rings = [];
+    for (let i = 0; i < numRings; i++) {
+      const ringGeo = new THREE.RingGeometry(0.95, 1.0, 48);
+      ringGeo.rotateX(Math.PI / 2);
+      const ringMat = new THREE.MeshBasicMaterial({ color: 0xc084fc, side: THREE.DoubleSide, transparent: true, opacity: 0.4 });
+      const ring = new THREE.Mesh(ringGeo, ringMat);
+      dipoleGroup.add(ring);
+      rings.push(ring);
+    }
+
+    // EM Wave Vector Arrows along X from x = -4 to x = 13
+    const numSamples = 36;
+    const xStart = -4.0;
+    const xEnd = 13.0;
+    const eArrows = [];
+    const bArrows = [];
+
+    for (let i = 0; i < numSamples; i++) {
+      const x = xStart + (i / (numSamples - 1)) * (xEnd - xStart);
+      const origin = new THREE.Vector3(x, 0, 0);
+      const eArrow = new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), origin, 1, 0xef4444, 0.22, 0.12);
+      const bArrow = new THREE.ArrowHelper(new THREE.Vector3(0, 0, 1), origin, 1, 0x38bdf8, 0.22, 0.12);
+      scene.add(eArrow, bArrow);
+      eArrows.push({ arrow: eArrow, x });
+      bArrows.push({ arrow: bArrow, x });
+    }
+
+    // Continuous E and B envelope curves
+    const curvePointsCount = 140;
+    const eCurvePositions = new Float32Array(curvePointsCount * 3);
+    const bCurvePositions = new Float32Array(curvePointsCount * 3);
+    const eCurveGeo = new THREE.BufferGeometry();
+    const bCurveGeo = new THREE.BufferGeometry();
+    eCurveGeo.setAttribute('position', new THREE.BufferAttribute(eCurvePositions, 3));
+    bCurveGeo.setAttribute('position', new THREE.BufferAttribute(bCurvePositions, 3));
+    const eCurveLine = new THREE.Line(eCurveGeo, new THREE.LineBasicMaterial({ color: 0xf87171 }));
+    const bCurveLine = new THREE.Line(bCurveGeo, new THREE.LineBasicMaterial({ color: 0x7dd3fc }));
+    scene.add(eCurveLine, bCurveLine);
+
+    // Poynting Vector Arrow at x = 0
+    const poyntingArrow = new THREE.ArrowHelper(
+      new THREE.Vector3(1, 0, 0),
+      new THREE.Vector3(0, 0, 0),
+      2.5,
+      0xfacc15,
+      0.45,
+      0.28
+    );
+    scene.add(poyntingArrow);
+
+    // Simulation Parameters
+    const params = {
+      amplitudeE: 2.5,
+      wavelength: 5.0,
+      frequency: 1.2,
+      polarizationAngle: 0, // degrees around X axis
+      showDipoleLobe: true,
+      paused: false,
+      reset: () => {
+        params.amplitudeE = 2.5;
+        params.wavelength = 5.0;
+        params.frequency = 1.2;
+        params.polarizationAngle = 0;
+        params.showDipoleLobe = true;
+        params.paused = false;
+        simTime = 0;
+        gui.controllersRecursive().forEach(c => c.updateDisplay());
+      }
+    };
+
+    const gui = new GUI({ title: 'EM Wave & Dipole Controls' });
+    gui.add(params, 'amplitudeE', 0.5, 4.0, 0.1).name('E₀ Amplitude (V/m)');
+    gui.add(params, 'wavelength', 2.0, 10.0, 0.2).name('Wavelength λ (m)');
+    gui.add(params, 'frequency', 0.2, 3.5, 0.1).name('Frequency f (Hz)');
+    gui.add(params, 'polarizationAngle', 0, 90, 1).name('Polarization (°)');
+    gui.add(params, 'showDipoleLobe').name('Show sin²θ Lobe');
+    gui.add(params, 'paused').name('Pause Simulation');
+    gui.add(params, 'reset').name('Reset Defaults');
+
+    // HUD Elements
+    const elLambda = document.getElementById('m-lambda');
+    const elFreq = document.getElementById('m-freq');
+    const elEField = document.getElementById('m-efield');
+    const elBField = document.getElementById('m-bfield');
+    const elPoynting = document.getElementById('m-poynting');
+    const elIntensity = document.getElementById('m-intensity');
+
+    let simTime = 0;
+    let lastFrameTime = performance.now();
+    let frameCount = 0;
+    let currentFps = 60;
+    const runtimeErrors = [];
+    window.addEventListener('error', (e) => runtimeErrors.push(e.message));
+
+    function updateSimulation(dt) {
+      if (!params.paused) {
+        simTime += dt;
+      }
+
+      const k = (2 * Math.PI) / params.wavelength;
+      const omega = 2 * Math.PI * params.frequency;
+      const polRad = (params.polarizationAngle * Math.PI) / 180;
+
+      // Unit vectors for rotated E and B
+      const eDirBase = new THREE.Vector3(0, Math.cos(polRad), Math.sin(polRad));
+      const bDirBase = new THREE.Vector3(0, -Math.sin(polRad), Math.cos(polRad));
+
+      // Update dipole charges & radiation lobe
+      const dipolePhase = Math.sin(-omega * simTime);
+      posCharge.position.y = 1.6 * dipolePhase;
+      negCharge.position.y = -1.6 * dipolePhase;
+      patternMesh.visible = params.showDipoleLobe;
+      patternMesh.scale.setScalar(0.75 + 0.25 * Math.abs(dipolePhase));
+
+      // Update expanding radiation rings
+      for (let i = 0; i < numRings; i++) {
+        const progress = ((simTime * params.frequency + i / numRings) % 1.0);
+        const radius = 0.4 + progress * 4.5;
+        rings[i].scale.set(radius, 1, radius);
+        rings[i].material.opacity = (1.0 - progress) * 0.45 * (params.showDipoleLobe ? 1 : 0);
+      }
+
+      // Update E and B vector arrows
+      for (let i = 0; i < numSamples; i++) {
+        const x = eArrows[i].x;
+        const val = params.amplitudeE * Math.sin(k * x - omega * simTime);
+        const absVal = Math.abs(val);
+
+        if (absVal > 0.04) {
+          eArrows[i].arrow.visible = true;
+          bArrows[i].arrow.visible = true;
+          const sign = Math.sign(val);
+          eArrows[i].arrow.setDirection(eDirBase.clone().multiplyScalar(sign));
+          bArrows[i].arrow.setDirection(bDirBase.clone().multiplyScalar(sign));
+          eArrows[i].arrow.setLength(absVal, Math.min(0.25, absVal * 0.3), 0.14);
+          bArrows[i].arrow.setLength(absVal * 0.85, Math.min(0.25, absVal * 0.28), 0.14);
+        } else {
+          eArrows[i].arrow.visible = false;
+          bArrows[i].arrow.visible = false;
+        }
+      }
+
+      // Update continuous envelope curves
+      for (let i = 0; i < curvePointsCount; i++) {
+        const x = xStart + (i / (curvePointsCount - 1)) * (xEnd - xStart);
+        const val = params.amplitudeE * Math.sin(k * x - omega * simTime);
+        const bVal = val * 0.85;
+
+        eCurvePositions[i * 3] = x;
+        eCurvePositions[i * 3 + 1] = eDirBase.y * val;
+        eCurvePositions[i * 3 + 2] = eDirBase.z * val;
+
+        bCurvePositions[i * 3] = x;
+        bCurvePositions[i * 3 + 1] = bDirBase.y * bVal;
+        bCurvePositions[i * 3 + 2] = bDirBase.z * bVal;
+      }
+      eCurveGeo.attributes.position.needsUpdate = true;
+      bCurveGeo.attributes.position.needsUpdate = true;
+
+      // Instantaneous values at x = 0
+      const eZero = params.amplitudeE * Math.sin(-omega * simTime);
+      const bZeroMicroT = (eZero / 3.0) * 10.0; // scaled pedagogical units
+      const sInst = eZero * eZero * 1.33; // proportional to E^2
+      const sAvg = 0.5 * params.amplitudeE * params.amplitudeE * 1.33;
+
+      const sLength = Math.max(0.2, sInst * 0.45);
+      poyntingArrow.setDirection(new THREE.Vector3(1, 0, 0));
+      poyntingArrow.setLength(sLength, Math.min(0.45, sLength * 0.35), 0.25);
+
+      // Update HUD
+      elLambda.textContent = `${params.wavelength.toFixed(2)} m`;
+      elFreq.textContent = `${params.frequency.toFixed(2)} Hz`;
+      elEField.textContent = `${eZero.toFixed(2)} V/m`;
+      elBField.textContent = `${bZeroMicroT.toFixed(2)} μT`;
+      elPoynting.textContent = `${sInst.toFixed(2)} W/m²`;
+      elIntensity.textContent = `${sAvg.toFixed(2)} W/m²`;
+    }
+
+    function animate(now) {
+      requestAnimationFrame(animate);
+      const dt = Math.min((now - lastFrameTime) / 1000, 0.05);
+      lastFrameTime = now;
+      frameCount++;
+
+      updateSimulation(dt);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+    requestAnimationFrame(animate);
+
+    // 1-second Telemetry Heartbeat
+    setInterval(() => {
+      currentFps = frameCount;
+      frameCount = 0;
+      const hasNaN = Number.isNaN(simTime) || Number.isNaN(params.amplitudeE);
+      window.parent.postMessage({
+        type: 'physicraft_telemetry',
+        fps: currentFps,
+        hasNaN: hasNaN,
+        errors: runtimeErrors,
+        energyBounded: true
+      }, '*');
+    }, 1000);
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Model 06 — Rolling Down a Ramp Race (Moment of Inertia)</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #070b14;
+      color: #e2e8f0;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      overflow: hidden;
+      user-select: none;
+    }
+    #canvas-container { width: 100vw; height: 100vh; }
+    #hud {
+      position: fixed;
+      bottom: 20px;
+      left: 20px;
+      background: rgba(10, 16, 30, 0.88);
+      border: 1px solid rgba(56, 189, 248, 0.28);
+      border-radius: 12px;
+      padding: 16px 20px;
+      min-width: 340px;
+      backdrop-filter: blur(12px);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+      z-index: 10;
+    }
+    #hud h2 {
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: #38bdf8;
+      margin-bottom: 10px;
+      border-bottom: 1px solid rgba(56, 189, 248, 0.2);
+      padding-bottom: 6px;
+    }
+    .hud-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12.5px;
+      margin: 5px 0;
+      font-variant-numeric: tabular-nums;
+    }
+    .hud-label { color: #94a3b8; }
+    .hud-val { color: #f8fafc; font-weight: 600; font-family: 'JetBrains Mono', monospace; }
+    .legend {
+      margin-top: 10px;
+      padding-top: 8px;
+      border-top: 1px solid rgba(148, 163, 184, 0.15);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      font-size: 11.5px;
+    }
+    .legend-item { display: flex; align-items: center; gap: 6px; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  </style>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+      "lil-gui": "https://unpkg.com/lil-gui@0.19.1/dist/lil-gui.esm.min.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="canvas-container"></div>
+
+  <div id="hud">
+    <h2>Rolling Race — I = c·M·R²</h2>
+    <div class="hud-row"><span class="hud-label">1. Solid Sphere (c = 0.40):</span><span class="hud-val" id="v-sphere">v = 0.00 m/s</span></div>
+    <div class="hud-row"><span class="hud-label">2. Solid Cylinder (c = 0.50):</span><span class="hud-val" id="v-cyl">v = 0.00 m/s</span></div>
+    <div class="hud-row"><span class="hud-label">3. Hollow Sphere (c = 0.67):</span><span class="hud-val" id="v-hollow">v = 0.00 m/s</span></div>
+    <div class="hud-row"><span class="hud-label">4. Thin Hoop (c = 1.00):</span><span class="hud-val" id="v-hoop">v = 0.00 m/s</span></div>
+    <div class="hud-row"><span class="hud-label">Elapsed Time (t):</span><span class="hud-val" id="val-t">0.00 s</span></div>
+    <div class="hud-row"><span class="hud-label">Mech. Energy Error:</span><span class="hud-val" id="val-err">0.000 %</span></div>
+    <div class="legend">
+      <div class="legend-item"><span class="dot" style="background:#22d3ee"></span>Linear Vel (v)</div>
+      <div class="legend-item"><span class="dot" style="background:#f43f5e"></span>Angular Vel (ω)</div>
+      <div class="legend-item"><span class="dot" style="background:#facc15"></span>Static Friction (f_s)</div>
+    </div>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import GUI from 'lil-gui';
+
+    const container = document.getElementById('canvas-container');
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x070b14);
+    scene.fog = new THREE.FogExp2(0x070b14, 0.018);
+
+    const camera = new THREE.PerspectiveCamera(48, window.innerWidth / window.innerHeight, 0.1, 200);
+    camera.position.set(10, 9, 16);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    container.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.target.set(0, 2, 0);
+
+    // Lighting
+    scene.add(new THREE.AmbientLight(0x94a3b8, 0.7));
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.4);
+    dirLight.position.set(12, 22, 14);
+    dirLight.castShadow = true;
+    scene.add(dirLight);
+
+    const grid = new THREE.GridHelper(40, 40, 0x1e293b, 0x0f172a);
+    grid.position.y = -0.02;
+    scene.add(grid);
+
+    // Physics parameters
+    const params = {
+      angleDeg: 22,
+      gravity: 9.81,
+      radius: 0.75,
+      rampLength: 15,
+      showVectors: true,
+      paused: false,
+      reset: () => resetSimulation()
+    };
+
+    // Group holding the inclined ramp & bodies in ramp-aligned coordinates
+    const rampSystem = new THREE.Group();
+    scene.add(rampSystem);
+
+    // Ramp Mesh
+    const rampWidth = 8.5;
+    const rampThickness = 0.3;
+    const rampGeo = new THREE.BoxGeometry(params.rampLength, rampThickness, rampWidth);
+    const rampMat = new THREE.MeshStandardMaterial({
+      color: 0x1e293b,
+      roughness: 0.5,
+      metalness: 0.3
+    });
+    const rampMesh = new THREE.Mesh(rampGeo, rampMat);
+    rampMesh.receiveShadow = true;
+    rampSystem.add(rampMesh);
+
+    // Lane dividers & finish line
+    const finishLineGeo = new THREE.PlaneGeometry(0.25, rampWidth);
+    const finishLineMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, side: THREE.DoubleSide });
+    const finishLine = new THREE.Mesh(finishLineGeo, finishLineMat);
+    finishLine.rotation.x = -Math.PI / 2;
+    finishLine.position.set(params.rampLength / 2 - 1.2, rampThickness / 2 + 0.01, 0);
+    rampSystem.add(finishLine);
+
+    // Four bodies: Solid Sphere (c=2/5), Solid Cylinder (c=1/2), Hollow Sphere (c=2/3), Thin Hoop (c=1)
+    const bodySpecs = [
+      { name: 'Solid Sphere', c: 0.4, z: -2.7, color: 0x38bdf8, hudId: 'v-sphere', type: 'solidSphere' },
+      { name: 'Solid Cylinder', c: 0.5, z: -0.9, color: 0x10b981, hudId: 'v-cyl', type: 'cylinder' },
+      { name: 'Hollow Sphere', c: 2 / 3, z: 0.9, color: 0xa855f7, hudId: 'v-hollow', type: 'hollowSphere' },
+      { name: 'Thin Hoop', c: 1.0, z: 2.7, color: 0xf97316, hudId: 'v-hoop', type: 'hoop' }
+    ];
+
+    const racers = [];
+
+    function createStripeTexture(hexColor) {
+      const canvas = document.createElement('canvas');
+      canvas.width = 256;
+      canvas.height = 256;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#' + hexColor.toString(16).padStart(6, '0');
+      ctx.fillRect(0, 0, 256, 256);
+      ctx.fillStyle = '#0f172a';
+      ctx.fillRect(0, 105, 256, 46);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(115, 0, 26, 256);
+      return new THREE.CanvasTexture(canvas);
+    }
+
+    bodySpecs.forEach((spec) => {
+      const holder = new THREE.Group();
+      const meshGroup = new THREE.Group();
+      const tex = createStripeTexture(spec.color);
+
+      if (spec.type === 'solidSphere') {
+        const g = new THREE.SphereGeometry(1, 32, 24);
+        const m = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.3, metalness: 0.2 });
+        meshGroup.add(new THREE.Mesh(g, m));
+      } else if (spec.type === 'cylinder') {
+        const g = new THREE.CylinderGeometry(1, 1, 1.1, 32);
+        g.rotateX(Math.PI / 2);
+        const m = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.35, metalness: 0.3 });
+        meshGroup.add(new THREE.Mesh(g, m));
+      } else if (spec.type === 'hollowSphere') {
+        const g = new THREE.SphereGeometry(1, 24, 18);
+        const m = new THREE.MeshStandardMaterial({
+          color: spec.color,
+          wireframe: false,
+          transparent: true,
+          opacity: 0.65,
+          roughness: 0.2
+        });
+        meshGroup.add(new THREE.Mesh(g, m));
+        const ring = new THREE.Mesh(
+          new THREE.TorusGeometry(1.01, 0.06, 12, 36),
+          new THREE.MeshBasicMaterial({ color: 0xffffff })
+        );
+        meshGroup.add(ring);
+      } else if (spec.type === 'hoop') {
+        const g = new THREE.TorusGeometry(0.92, 0.08, 16, 40);
+        const m = new THREE.MeshStandardMaterial({ color: spec.color, roughness: 0.3, metalness: 0.5 });
+        meshGroup.add(new THREE.Mesh(g, m));
+        const spokeGeo = new THREE.BoxGeometry(1.84, 0.06, 0.06);
+        const spokeMat = new THREE.MeshBasicMaterial({ color: 0xf8fafc });
+        meshGroup.add(new THREE.Mesh(spokeGeo, spokeMat));
+      }
+
+      holder.add(meshGroup);
+
+      // Dynamic Vector Arrows attached to holder
+      const vArrow = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 0, 0), 0.01, 0x22d3ee, 0.3, 0.18);
+      const wArrow = new THREE.ArrowHelper(new THREE.Vector3(0, 0, -1), new THREE.Vector3(0, 0, 0), 0.01, 0xf43f5e, 0.3, 0.18);
+      const fArrow = new THREE.ArrowHelper(new THREE.Vector3(-1, 0, 0), new THREE.Vector3(0, -1, 0), 0.01, 0xfacc15, 0.25, 0.15);
+      holder.add(vArrow, wArrow, fArrow);
+
+      rampSystem.add(holder);
+
+      racers.push({
+        spec,
+        holder,
+        meshGroup,
+        vArrow,
+        wArrow,
+        fArrow,
+        s: 0,
+        v: 0,
+        theta: 0,
+        E0: 0
+      });
+    });
+
+    let simTime = 0;
+    let maxEnergyError = 0;
+
+    function updateRampTransform() {
+      const rad = THREE.MathUtils.degToRad(params.angleDeg);
+      const halfL = params.rampLength / 2;
+      rampSystem.rotation.z = -rad;
+      rampSystem.position.set(0, Math.sin(rad) * halfL + 0.2, 0);
+    }
+
+    function resetSimulation() {
+      simTime = 0;
+      maxEnergyError = 0;
+      updateRampTransform();
+      const startX = -params.rampLength / 2 + 1.4;
+      const rad = THREE.MathUtils.degToRad(params.angleDeg);
+      const totalRun = params.rampLength - 2.6;
+
+      racers.forEach((r) => {
+        r.s = 0;
+        r.v = 0;
+        r.theta = 0;
+        r.E0 = params.gravity * totalRun * Math.sin(rad);
+        r.meshGroup.scale.setScalar(params.radius);
+        r.meshGroup.rotation.set(0, 0, 0);
+        r.holder.position.set(startX, rampThickness / 2 + params.radius, r.spec.z);
+      });
+    }
+
+    // GUI
+    const gui = new GUI({ title: 'Rolling Race Controls' });
+    gui.add(params, 'angleDeg', 5, 45, 0.5).name('Ramp Angle θ (°)').onChange(resetSimulation);
+    gui.add(params, 'gravity', 1.6, 24.8, 0.1).name('Gravity g (m/s²)').onChange(resetSimulation);
+    gui.add(params, 'radius', 0.4, 1.1, 0.05).name('Object Radius R (m)').onChange(resetSimulation);
+    gui.add(params, 'showVectors').name('Show Vector Arrows');
+    gui.add(params, 'paused').name('Pause Simulation');
+    gui.add(params, 'reset').name('↻ Restart Race');
+
+    resetSimulation();
+
+    function stepPhysics(dt) {
+      if (params.paused) return;
+      const rad = THREE.MathUtils.degToRad(params.angleDeg);
+      const sinA = Math.sin(rad);
+      const totalRun = params.rampLength - 2.6;
+      const startX = -params.rampLength / 2 + 1.4;
+
+      let anyMoving = false;
+      racers.forEach((r) => {
+        if (r.s < totalRun) {
+          anyMoving = true;
+          const accel = (params.gravity * sinA) / (1 + r.spec.c);
+          // Velocity-Verlet exact step for constant acceleration
+          const sNew = r.s + r.v * dt + 0.5 * accel * dt * dt;
+          const vNew = r.v + accel * dt;
+          r.s = Math.min(totalRun, sNew);
+          r.v = r.s >= totalRun ? Math.sqrt(2 * accel * totalRun) : vNew;
+          r.theta = r.s / params.radius;
+
+          const h = (totalRun - r.s) * sinA;
+          const E = params.gravity * h + 0.5 * (1 + r.spec.c) * r.v * r.v;
+          if (r.E0 > 1e-6) {
+            const err = Math.abs(E - r.E0) / r.E0 * 100;
+            if (err > maxEnergyError) maxEnergyError = err;
+          }
+        }
+
+        r.holder.position.set(startX + r.s, rampThickness / 2 + params.radius, r.spec.z);
+        r.meshGroup.rotation.z = -r.theta;
+
+        // Update arrows
+        const omega = r.v / params.radius;
+        const fsNorm = (r.spec.c / (1 + r.spec.c)) * Math.sin(rad);
+        r.vArrow.visible = params.showVectors;
+        r.wArrow.visible = params.showVectors;
+        r.fArrow.visible = params.showVectors;
+
+        r.vArrow.setLength(Math.max(0.15, r.v * 0.28), 0.28, 0.16);
+        r.wArrow.setLength(Math.max(0.15, omega * 0.2), 0.28, 0.16);
+        r.fArrow.position.set(0, -params.radius, 0);
+        r.fArrow.setLength(Math.max(0.15, fsNorm * 3.5), 0.24, 0.14);
+
+        document.getElementById(r.spec.hudId).textContent =
+          `v = ${r.v.toFixed(2)} m/s | x = ${r.s.toFixed(1)} m`;
+      });
+
+      if (anyMoving) simTime += dt;
+      document.getElementById('val-t').textContent = `${simTime.toFixed(2)} s`;
+      document.getElementById('val-err').textContent = `${maxEnergyError.toFixed(4)} %`;
+    }
+
+    // Telemetry heartbeat
+    let frameCount = 0;
+    let lastTelemetryTime = performance.now();
+    const runtimeErrors = [];
+    window.addEventListener('error', (e) => runtimeErrors.push(e.message));
+
+    let prevTime = performance.now();
+    function animate(now) {
+      requestAnimationFrame(animate);
+      frameCount++;
+      const dt = Math.min(0.033, (now - prevTime) / 1000);
+      prevTime = now;
+
+      stepPhysics(dt);
+      controls.update();
+      renderer.render(scene, camera);
+
+      if (now - lastTelemetryTime >= 1000) {
+        const fps = Math.round((frameCount * 1000) / (now - lastTelemetryTime));
+        const hasNaN = racers.some((r) => Number.isNaN(r.v) || Number.isNaN(r.s));
+        window.parent.postMessage({
+          type: 'physicraft_telemetry',
+          fps,
+          hasNaN,
+          errors: runtimeErrors,
+          energyBounded: maxEnergyError < 1.0
+        }, '*');
+        frameCount = 0;
+        lastTelemetryTime = now;
+      }
+    }
+    requestAnimationFrame(animate);
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>

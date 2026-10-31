@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>42. Special Relativity: Minkowski Spacetime, Light Clock & Length Contraction</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #070b14; color: #e2e8f0; font-family: 'Inter', -apple-system, sans-serif; overflow: hidden; }
+    canvas { display: block; width: 100vw; height: 100vh; }
+    #hud {
+      position: absolute; bottom: 20px; left: 20px; width: 365px;
+      background: rgba(15, 23, 42, 0.88); backdrop-filter: blur(12px);
+      border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 12px;
+      padding: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+      font-size: 13px; line-height: 1.5; z-index: 10;
+    }
+    #hud h2 { font-size: 15px; color: #38bdf8; margin-bottom: 8px; font-weight: 600; }
+    .metric { display: flex; justify-content: space-between; margin: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.06); padding-bottom: 3px; }
+    .metric span.val { font-family: 'JetBrains Mono', monospace; color: #f8fafc; font-weight: 600; }
+    .legend { margin-top: 10px; display: flex; flex-direction: column; gap: 5px; font-size: 12px; }
+    .legend-item { display: flex; align-items: center; gap: 8px; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  </style>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+      "lil-gui": "https://unpkg.com/lil-gui@0.19.1/dist/lil-gui.esm.min.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="hud">
+    <h2>42. Special Relativity Lab (3D)</h2>
+    <div class="metric"><span>Relative Velocity (β = v/c):</span><span class="val" id="m-beta">0.60 c</span></div>
+    <div class="metric"><span>Lorentz Factor (γ):</span><span class="val" id="m-gamma">1.250</span></div>
+    <div class="metric"><span>Coordinate Time (t):</span><span class="val" id="m-coord-t">0.00 s</span></div>
+    <div class="metric"><span>Proper Time (τ = t/γ):</span><span class="val" id="m-proper-t">0.00 s</span></div>
+    <div class="metric"><span>Contracted Length (L = L₀/γ):</span><span class="val" id="m-length">3.20 m</span></div>
+    <div class="metric"><span>Spacetime Interval (ds²):</span><span class="val" id="m-interval">Timelike (-c²dτ²)</span></div>
+    <div class="legend">
+      <div class="legend-item"><span class="dot" style="background:#facc15"></span>Minkowski Light Cone (ct = ±r) & Photon Pulse</div>
+      <div class="legend-item"><span class="dot" style="background:#22c55e"></span>Worldline & 4-Velocity Vector u^μ</div>
+      <div class="legend-item"><span class="dot" style="background:#38bdf8"></span>Lorentz-Contracted Spaceship & Light Clock</div>
+      <div class="legend-item"><span class="dot" style="background:#f43f5e"></span>Boosted Simultaneity Plane (ct' = 0)</div>
+    </div>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import GUI from 'lil-gui';
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x070b14);
+
+    const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 200);
+    camera.position.set(0, 7, 18);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    document.body.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.target.set(0, 1, 0);
+
+    // Lighting
+    scene.add(new THREE.AmbientLight(0xffffff, 0.65));
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.1);
+    dirLight.position.set(12, 20, 14);
+    scene.add(dirLight);
+
+    const grid = new THREE.GridHelper(32, 32, 0x1e293b, 0x0f172a);
+    grid.position.y = -4.5;
+    scene.add(grid);
+
+    // ================= LEFT SIDE: 3D MINKOWSKI SPACETIME DIAGRAM =================
+    const minkowskiGroup = new THREE.Group();
+    minkowskiGroup.position.set(-5.5, 0, 0);
+    scene.add(minkowskiGroup);
+
+    // Future and Past Light Cones (ct along Y, x and z horizontal)
+    const coneHeight = 4.2;
+    const coneGeo = new THREE.ConeGeometry(coneHeight, coneHeight, 40, 1, true);
+    const coneMat = new THREE.MeshPhongMaterial({
+      color: 0xfacc15,
+      transparent: true,
+      opacity: 0.22,
+      side: THREE.DoubleSide,
+      wireframe: false
+    });
+    const futureCone = new THREE.Mesh(coneGeo, coneMat);
+    futureCone.position.y = coneHeight / 2;
+    futureCone.rotation.x = Math.PI; // Apex at origin pointing down
+
+    const pastCone = new THREE.Mesh(coneGeo, coneMat);
+    pastCone.position.y = -coneHeight / 2;
+
+    const coneWireMat = new THREE.MeshBasicMaterial({ color: 0xfacc15, wireframe: true, transparent: true, opacity: 0.35 });
+    const futureWire = new THREE.Mesh(coneGeo, coneWireMat);
+    futureWire.position.copy(futureCone.position);
+    futureWire.rotation.copy(futureCone.rotation);
+    const pastWire = new THREE.Mesh(coneGeo, coneWireMat);
+    pastWire.position.copy(pastCone.position);
+
+    minkowskiGroup.add(futureCone, pastCone, futureWire, pastWire);
+
+    // Spacetime Axes (ct = Y, x = X, y = Z)
+    const ctAxis = new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, -4.4, 0), 9.0, 0x94a3b8, 0.35, 0.2);
+    const xAxis = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(-4.4, 0, 0), 9.0, 0x94a3b8, 0.35, 0.2);
+    minkowskiGroup.add(ctAxis, xAxis);
+
+    // Boosted Worldline (ct' axis) and 4-Velocity Arrow
+    const worldlineArrow = new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, -4.0, 0), 8.2, 0x22c55e, 0.45, 0.28);
+    minkowskiGroup.add(worldlineArrow);
+
+    // Tilted Simultaneity Plane (ct' = 0 surface)
+    const simPlaneGeo = new THREE.PlaneGeometry(7.0, 4.5, 8, 8);
+    simPlaneGeo.rotateX(Math.PI / 2);
+    const simPlaneMat = new THREE.MeshBasicMaterial({
+      color: 0xf43f5e,
+      transparent: true,
+      opacity: 0.28,
+      side: THREE.DoubleSide
+    });
+    const simPlane = new THREE.Mesh(simPlaneGeo, simPlaneMat);
+    minkowskiGroup.add(simPlane);
+
+    // Event marker moving up the worldline
+    const eventBead = new THREE.Mesh(
+      new THREE.SphereGeometry(0.18, 20, 20),
+      new THREE.MeshStandardMaterial({ color: 0x22c55e, emissive: 0x15803d })
+    );
+    minkowskiGroup.add(eventBead);
+
+    // ================= RIGHT SIDE: LIGHT CLOCK & LENGTH CONTRACTION =================
+    const labGroup = new THREE.Group();
+    labGroup.position.set(4.5, 0, 0);
+    scene.add(labGroup);
+
+    // Reference Rest Ruler (Uncontracted L0 = 4.0m) at bottom
+    const restShipGroup = new THREE.Group();
+    restShipGroup.position.set(0, -2.8, 0);
+    labGroup.add(restShipGroup);
+
+    const L0 = 4.0;
+    const mirrorHeight = 2.6;
+
+    function createLightClockRig(colorHex, opacity = 1.0) {
+      const rig = new THREE.Group();
+      const plateGeo = new THREE.BoxGeometry(L0, 0.14, 1.2);
+      const plateMat = new THREE.MeshStandardMaterial({
+        color: colorHex,
+        metalness: 0.6,
+        roughness: 0.3,
+        transparent: opacity < 1.0,
+        opacity
+      });
+      const bottomMirror = new THREE.Mesh(plateGeo, plateMat);
+      bottomMirror.position.y = -mirrorHeight / 2;
+      const topMirror = new THREE.Mesh(plateGeo, plateMat);
+      topMirror.position.y = mirrorHeight / 2;
+
+      // Side struts
+      const strutGeo = new THREE.CylinderGeometry(0.05, 0.05, mirrorHeight, 12);
+      const leftStrut = new THREE.Mesh(strutGeo, plateMat);
+      leftStrut.position.set(-L0 / 2 + 0.15, 0, 0);
+      const rightStrut = new THREE.Mesh(strutGeo, plateMat);
+      rightStrut.position.set(L0 / 2 - 0.15, 0, 0);
+
+      rig.add(bottomMirror, topMirror, leftStrut, rightStrut);
+      return rig;
+    }
+
+    // Stationary reference ghost clock
+    const restRig = createLightClockRig(0x64748b, 0.35);
+    restShipGroup.add(restRig);
+    const restPhoton = new THREE.Mesh(
+      new THREE.SphereGeometry(0.16, 16, 16),
+      new THREE.MeshBasicMaterial({ color: 0xfef08a })
+    );
+    restShipGroup.add(restPhoton);
+
+    // Relativistic Moving Light Clock & Contracted Ship at top
+    const movingShipGroup = new THREE.Group();
+    movingShipGroup.position.set(0, 1.5, 0);
+    labGroup.add(movingShipGroup);
+
+    const movingRig = createLightClockRig(0x38bdf8, 0.9);
+    movingShipGroup.add(movingRig);
+
+    const movingPhoton = new THREE.Mesh(
+      new THREE.SphereGeometry(0.2, 20, 20),
+      new THREE.MeshBasicMaterial({ color: 0xfacc15 })
+    );
+    labGroup.add(movingPhoton);
+
+    // Photon Velocity Vector Arrow
+    const photonVelArrow = new THREE.ArrowHelper(
+      new THREE.Vector3(1, 1, 0).normalize(),
+      new THREE.Vector3(0, 1.5, 0),
+      1.4,
+      0xfacc15,
+      0.3,
+      0.18
+    );
+    labGroup.add(photonVelArrow);
+
+    // Ship Velocity Vector Arrow
+    const shipVelArrow = new THREE.ArrowHelper(
+      new THREE.Vector3(1, 0, 0),
+      new THREE.Vector3(0, 3.1, 0),
+      1.5,
+      0x38bdf8,
+      0.32,
+      0.2
+    );
+    labGroup.add(shipVelArrow);
+
+    // Diagonal Zig-Zag Photon Path Trail in Lab Frame
+    const maxTrailPts = 160;
+    const trailPositions = new Float32Array(maxTrailPts * 3);
+    const trailGeo = new THREE.BufferGeometry();
+    trailGeo.setAttribute('position', new THREE.BufferAttribute(trailPositions, 3));
+    const trailLine = new THREE.Line(trailGeo, new THREE.LineBasicMaterial({ color: 0xfacc15 }));
+    labGroup.add(trailLine);
+    const trailHistory = [];
+
+    // Parameters & GUI
+    const params = {
+      beta: 0.60, // v/c
+      restLength: 4.0,
+      paused: false,
+      reset: () => {
+        params.beta = 0.60;
+        params.restLength = 4.0;
+        params.paused = false;
+        coordTime = 0;
+        trailHistory.length = 0;
+        gui.controllersRecursive().forEach(c => c.updateDisplay());
+      }
+    };
+
+    const gui = new GUI({ title: 'Special Relativity Controls' });
+    gui.add(params, 'beta', 0.0, 0.96, 0.01).name('Velocity β = v/c').onChange(() => {
+      trailHistory.length = 0;
+    });
+    gui.add(params, 'restLength', 2.0, 6.0, 0.2).name('Rest Length L₀ (m)');
+    gui.add(params, 'paused').name('Pause Simulation');
+    gui.add(params, 'reset').name('Reset Defaults');
+
+    // HUD Elements
+    const elBeta = document.getElementById('m-beta');
+    const elGamma = document.getElementById('m-gamma');
+    const elCoordT = document.getElementById('m-coord-t');
+    const elProperT = document.getElementById('m-proper-t');
+    const elLength = document.getElementById('m-length');
+
+    let coordTime = 0;
+    let lastFrameTime = performance.now();
+    let frameCount = 0;
+    let currentFps = 60;
+    const runtimeErrors = [];
+    window.addEventListener('error', (e) => runtimeErrors.push(e.message));
+
+    function updateSimulation(dt) {
+      const beta = params.beta;
+      const gamma = 1.0 / Math.sqrt(Math.max(1e-6, 1.0 - beta * beta));
+
+      if (!params.paused) {
+        coordTime += dt * 1.4;
+      }
+
+      const properTime = coordTime / gamma;
+
+      // 1. Update Minkowski Worldline & Simultaneity Plane
+      const angle = Math.atan(beta); // tilt angle from vertical ct axis
+      const worldDir = new THREE.Vector3(Math.sin(angle), Math.cos(angle), 0).normalize();
+      const originOffset = worldDir.clone().multiplyScalar(-4.0);
+      worldlineArrow.position.copy(originOffset);
+      worldlineArrow.setDirection(worldDir);
+      worldlineArrow.setLength(8.0, 0.45, 0.26);
+
+      // Simultaneity plane tilts symmetrically toward light cone by +angle
+      simPlane.rotation.z = angle;
+
+      // Move event marker along worldline
+      const cycle = ((coordTime * 0.6) % 2.0) - 1.0; // -1 to +1
+      eventBead.position.copy(worldDir.clone().multiplyScalar(cycle * 3.6));
+
+      // 2. Update Length Contraction & Moving Light Clock
+      const baseScale = params.restLength / L0;
+      restRig.scale.x = baseScale;
+      const contractedScale = baseScale / gamma;
+      movingRig.scale.x = contractedScale;
+
+      // Cyclic horizontal motion of moving ship across lab frame [-3.5, +3.5]
+      const trackSpan = 7.0;
+      const cSpeed = 3.2; // visual speed of light in scene units/s
+      const vShip = beta * cSpeed;
+      const shipX = ((coordTime * vShip) % trackSpan) - trackSpan / 2;
+
+      // Detect wrap-around to clear trail
+      if (trailHistory.length > 0 && Math.abs(shipX - trailHistory[trailHistory.length - 1].x) > 3.5) {
+        trailHistory.length = 0;
+      }
+      movingShipGroup.position.x = shipX;
+
+      // Vertical bounce of photon inside rest clock (period T0 = 2 * mirrorHeight / cSpeed)
+      const halfPeriodRest = (mirrorHeight - 0.3) / cSpeed;
+      const restPhase = (coordTime / halfPeriodRest) % 2.0;
+      const restY = restPhase <= 1.0
+        ? -1.15 + restPhase * 2.3
+        : 1.15 - (restPhase - 1.0) * 2.3;
+      restPhoton.position.set(0, restY, 0);
+
+      // Vertical bounce of photon inside moving clock (dilated period T = gamma * T0)
+      const vy = cSpeed / gamma;
+      const halfPeriodMoving = halfPeriodRest * gamma;
+      const movPhase = (coordTime / halfPeriodMoving) % 2.0;
+      const movDirY = movPhase <= 1.0 ? 1 : -1;
+      const movY = movPhase <= 1.0
+        ? -1.15 + movPhase * 2.3
+        : 1.15 - (movPhase - 1.0) * 2.3;
+
+      const photonWorldPos = new THREE.Vector3(shipX, 1.5 + movY, 0);
+      movingPhoton.position.copy(photonWorldPos);
+
+      // Update Photon & Ship Velocity Arrows
+      const pDir = new THREE.Vector3(vShip, movDirY * vy, 0).normalize();
+      photonVelArrow.position.copy(photonWorldPos);
+      photonVelArrow.setDirection(pDir);
+      photonVelArrow.setLength(1.25, 0.28, 0.16);
+
+      shipVelArrow.position.set(shipX, 3.1, 0);
+      if (beta > 0.01) {
+        shipVelArrow.visible = true;
+        shipVelArrow.setDirection(new THREE.Vector3(1, 0, 0));
+        shipVelArrow.setLength(0.4 + beta * 1.8, 0.3, 0.18);
+      } else {
+        shipVelArrow.visible = false;
+      }
+
+      // Append to photon zig-zag trail
+      if (!params.paused) {
+        trailHistory.push(photonWorldPos.clone());
+        if (trailHistory.length > maxTrailPts) trailHistory.shift();
+      }
+      for (let i = 0; i < maxTrailPts; i++) {
+        const pt = trailHistory[Math.min(i, Math.max(0, trailHistory.length - 1))] || photonWorldPos;
+        trailPositions[i * 3] = pt.x;
+        trailPositions[i * 3 + 1] = pt.y;
+        trailPositions[i * 3 + 2] = pt.z;
+      }
+      trailGeo.attributes.position.needsUpdate = true;
+
+      // Update HUD
+      elBeta.textContent = `${beta.toFixed(2)} c`;
+      elGamma.textContent = gamma.toFixed(3);
+      elCoordT.textContent = `${coordTime.toFixed(2)} s`;
+      elProperT.textContent = `${properTime.toFixed(2)} s`;
+      elLength.textContent = `${(params.restLength / gamma).toFixed(2)} m`;
+    }
+
+    function animate(now) {
+      requestAnimationFrame(animate);
+      const dt = Math.min((now - lastFrameTime) / 1000, 0.05);
+      lastFrameTime = now;
+      frameCount++;
+
+      updateSimulation(dt);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+    requestAnimationFrame(animate);
+
+    // 1-second Telemetry Heartbeat
+    setInterval(() => {
+      currentFps = frameCount;
+      frameCount = 0;
+      const hasNaN = Number.isNaN(coordTime) || Number.isNaN(params.beta);
+      window.parent.postMessage({
+        type: 'physicraft_telemetry',
+        fps: currentFps,
+        hasNaN: hasNaN,
+        errors: runtimeErrors,
+        energyBounded: true
+      }, '*');
+    }, 1000);
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>25. 3D Doppler Effect & Mach Cone (Sonic Boom)</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #070b14;
+      color: #e2e8f0;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      overflow: hidden;
+    }
+    canvas { display: block; width: 100vw; height: 100vh; }
+    #hud {
+      position: absolute;
+      bottom: 20px;
+      left: 20px;
+      background: rgba(15, 23, 42, 0.88);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      border-radius: 12px;
+      padding: 16px 20px;
+      min-width: 335px;
+      backdrop-filter: blur(10px);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+      font-size: 13px;
+      line-height: 1.6;
+      pointer-events: none;
+    }
+    #hud h2 {
+      font-size: 15px;
+      font-weight: 700;
+      color: #38bdf8;
+      margin-bottom: 8px;
+    }
+    .metric {
+      display: flex;
+      justify-content: space-between;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      padding: 3px 0;
+    }
+    .metric span.val {
+      font-family: 'JetBrains Mono', monospace;
+      color: #f8fafc;
+      font-weight: 600;
+    }
+    .legend {
+      margin-top: 10px;
+      padding-top: 8px;
+      border-top: 1px solid rgba(56, 189, 248, 0.25);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      font-size: 12px;
+    }
+    .legend-item { display: flex; align-items: center; gap: 6px; }
+    .swatch { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
+  </style>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+      "lil-gui": "https://unpkg.com/lil-gui@0.19.1/dist/lil-gui.esm.min.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="hud">
+    <h2>25. 3D Doppler Effect & Mach Cone</h2>
+    <div class="metric"><span>Mach Number (M = v_s / c):</span><span class="val" id="val-mach">1.60 (Supersonic)</span></div>
+    <div class="metric"><span>Source Frequency (f₀):</span><span class="val" id="val-f0">400.0 Hz</span></div>
+    <div class="metric"><span>Approach Freq (f_front):</span><span class="val" id="val-ffront">Shockwave (M ≥ 1)</span></div>
+    <div class="metric"><span>Receding Freq (f_behind):</span><span class="val" id="val-fback">153.8 Hz</span></div>
+    <div class="metric"><span>Mach Cone Angle (μ = arcsin(1/M)):</span><span class="val" id="val-cone">38.68°</span></div>
+    <div class="legend">
+      <div class="legend-item"><span class="swatch" style="background:#22c55e"></span>Source Velocity (v_s)</div>
+      <div class="legend-item"><span class="swatch" style="background:#38bdf8"></span>3D Spherical Wavefronts</div>
+      <div class="legend-item"><span class="swatch" style="background:#f59e0b"></span>Mach Shock Cone</div>
+      <div class="legend-item"><span class="swatch" style="background:#f43f5e"></span>Supersonic Jet Source</div>
+    </div>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import GUI from 'lil-gui';
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x070b14);
+    scene.fog = new THREE.FogExp2(0x070b14, 0.015);
+
+    const camera = new THREE.PerspectiveCamera(48, window.innerWidth / window.innerHeight, 0.1, 250);
+    camera.position.set(0, 7.5, 22);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    document.body.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.06;
+
+    scene.add(new THREE.AmbientLight(0x94a3b8, 0.8));
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.4);
+    dirLight.position.set(10, 18, 12);
+    scene.add(dirLight);
+
+    const grid = new THREE.GridHelper(36, 36, 0x1e293b, 0x0f172a);
+    grid.position.y = -6.0;
+    scene.add(grid);
+
+    const params = {
+      machNumber: 1.6,       // M = v_s / c (0 to 2.8)
+      waveSpeedC: 4.5,       // visual wave speed c (m/s)
+      baseFreqF0: 400.0,     // acoustic source frequency Hz
+      emitInterval: 0.32,    // s between wavefront emissions
+      show3DSpheres: true,
+      paused: false,
+      reset: () => {
+        params.machNumber = 1.6;
+        params.waveSpeedC = 4.5;
+        params.baseFreqF0 = 400.0;
+        params.emitInterval = 0.32;
+        params.show3DSpheres = true;
+        params.paused = false;
+        resetSimulation();
+        gui.controllersRecursive().forEach(c => c.updateDisplay());
+      }
+    };
+
+    // Moving Acoustic Source (Sleek Jet / Probe)
+    const sourceGroup = new THREE.Group();
+    scene.add(sourceGroup);
+
+    const noseGeo = new THREE.ConeGeometry(0.42, 1.6, 24);
+    noseGeo.rotateZ(-Math.PI / 2);
+    const noseMat = new THREE.MeshStandardMaterial({
+      color: 0xf43f5e,
+      emissive: 0x881337,
+      roughness: 0.25,
+      metalness: 0.4
+    });
+    const noseMesh = new THREE.Mesh(noseGeo, noseMat);
+    sourceGroup.add(noseMesh);
+
+    const wingGeo = new THREE.BoxGeometry(0.7, 0.06, 1.8);
+    const wingMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, metalness: 0.5, roughness: 0.3 });
+    const wingMesh = new THREE.Mesh(wingGeo, wingMat);
+    wingMesh.position.x = -0.35;
+    sourceGroup.add(wingMesh);
+
+    // Source Velocity Vector ArrowHelper
+    const velArrow = new THREE.ArrowHelper(
+      new THREE.Vector3(1, 0, 0),
+      new THREE.Vector3(0, 0, 0),
+      3.0,
+      0x22c55e,
+      0.55,
+      0.35
+    );
+    sourceGroup.add(velArrow);
+
+    // Mach Shockwave Cone attached to source (visible when M >= 1.0)
+    // Cone geometry apex at origin, extending in -X direction with half-angle mu = arcsin(1/M)
+    const machConeGeo = new THREE.ConeGeometry(1, 1, 48, 1, true);
+    // Default ConeGeometry has apex at +Y/2 and base at -Y/2. Shift apex to origin (0,0,0) and rotate to point apex at +X
+    machConeGeo.translate(0, -0.5, 0);
+    machConeGeo.rotateZ(-Math.PI / 2);
+    const machConeMat = new THREE.MeshStandardMaterial({
+      color: 0xf59e0b,
+      emissive: 0x78350f,
+      transparent: true,
+      opacity: 0.26,
+      side: THREE.DoubleSide,
+      wireframe: false
+    });
+    const machConeMesh = new THREE.Mesh(machConeGeo, machConeMat);
+
+    const machWireMat = new THREE.MeshBasicMaterial({
+      color: 0xfbbf24,
+      wireframe: true,
+      transparent: true,
+      opacity: 0.45
+    });
+    const machConeWire = new THREE.Mesh(machConeGeo, machWireMat);
+    machConeMesh.add(machConeWire);
+    sourceGroup.add(machConeMesh);
+
+    // Normal vectors to Mach shockwave front
+    const shockNormalTop = new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 0), 2.2, 0xf59e0b, 0.45, 0.28);
+    const shockNormalBot = new THREE.ArrowHelper(new THREE.Vector3(0, -1, 0), new THREE.Vector3(0, 0, 0), 2.2, 0xf59e0b, 0.45, 0.28);
+    sourceGroup.add(shockNormalTop, shockNormalBot);
+
+    // Pool of Expanding 3D Spherical Wavefronts
+    const MAX_WAVES = 28;
+    const wavefronts = [];
+    const sphereUnitGeo = new THREE.SphereGeometry(1, 28, 18);
+    const ringPts = [];
+    for (let i = 0; i <= 64; i++) {
+      const a = (i / 64) * Math.PI * 2;
+      ringPts.push(new THREE.Vector3(Math.cos(a), Math.sin(a), 0));
+    }
+    const ringUnitGeo = new THREE.BufferGeometry().setFromPoints(ringPts);
+
+    for (let i = 0; i < MAX_WAVES; i++) {
+      const wfGroup = new THREE.Group();
+      wfGroup.visible = false;
+
+      const sMat = new THREE.MeshStandardMaterial({
+        color: 0x38bdf8,
+        transparent: true,
+        opacity: 0.12,
+        roughness: 0.2,
+        depthWrite: false,
+        wireframe: true
+      });
+      const sphereMesh = new THREE.Mesh(sphereUnitGeo, sMat);
+      wfGroup.add(sphereMesh);
+
+      const rMat = new THREE.LineBasicMaterial({
+        color: 0x38bdf8,
+        transparent: true,
+        opacity: 0.85
+      });
+      const ringXY = new THREE.Line(ringUnitGeo, rMat);
+      const ringXZ = new THREE.Line(ringUnitGeo, rMat);
+      ringXZ.rotation.x = Math.PI / 2;
+      wfGroup.add(ringXY, ringXZ);
+
+      scene.add(wfGroup);
+      wavefronts.push({
+        group: wfGroup,
+        sphereMesh,
+        sMat,
+        rMat,
+        emitX: 0,
+        radius: 0.01,
+        age: 0,
+        active: false
+      });
+    }
+
+    let sourceX = -10.0;
+    let timeSinceEmit = 0;
+    let nextWaveIdx = 0;
+
+    function emitWavefront(xPos, initialAge = 0) {
+      const wf = wavefronts[nextWaveIdx];
+      nextWaveIdx = (nextWaveIdx + 1) % MAX_WAVES;
+      wf.active = true;
+      wf.emitX = xPos;
+      wf.age = initialAge;
+      wf.radius = Math.max(0.05, initialAge * params.waveSpeedC);
+      wf.group.position.set(xPos, 0, 0);
+      wf.group.scale.setScalar(wf.radius);
+      wf.group.visible = true;
+    }
+
+    function resetSimulation() {
+      wavefronts.forEach(wf => {
+        wf.active = false;
+        wf.group.visible = false;
+      });
+      const vs = params.machNumber * params.waveSpeedC;
+      sourceX = 5.5;
+      // Pre-populate historical wavefronts along trajectory so scene is immediately rich
+      const numSeed = 14;
+      for (let i = numSeed; i >= 1; i--) {
+        const age = i * params.emitInterval;
+        const pastX = sourceX - vs * age;
+        emitWavefront(pastX, age);
+      }
+      timeSinceEmit = 0;
+    }
+
+    const gui = new GUI({ title: 'Doppler & Mach Controls' });
+    gui.add(params, 'machNumber', 0.0, 2.6, 0.05).name('Mach Number (M = v_s/c)').onChange(resetSimulation);
+    gui.add(params, 'waveSpeedC', 2.5, 7.5, 0.25).name('Sound Speed c (m/s)').onChange(resetSimulation);
+    gui.add(params, 'baseFreqF0', 100, 800, 10).name('Source Freq f₀ (Hz)');
+    gui.add(params, 'emitInterval', 0.18, 0.6, 0.02).name('Wavefront Spacing').onChange(resetSimulation);
+    gui.add(params, 'show3DSpheres').name('Show 3D Sphere Shells');
+    gui.add(params, 'paused').name('Pause Simulation');
+    gui.add(params, 'reset').name('Reset Defaults');
+
+    resetSimulation();
+
+    const elMach = document.getElementById('val-mach');
+    const elF0 = document.getElementById('val-f0');
+    const elFfront = document.getElementById('val-ffront');
+    const elFback = document.getElementById('val-fback');
+    const elCone = document.getElementById('val-cone');
+
+    let lastTime = performance.now();
+    let frameCount = 0;
+    let lastFpsTime = performance.now();
+    let currentFps = 60;
+    const runtimeErrors = [];
+    window.addEventListener('error', (e) => runtimeErrors.push(e.message));
+
+    setInterval(() => {
+      window.parent.postMessage({
+        type: 'physicraft_telemetry',
+        fps: Math.round(currentFps),
+        hasNaN: !Number.isFinite(sourceX),
+        errors: runtimeErrors,
+        energyBounded: true
+      }, '*');
+    }, 1000);
+
+    function animate(now) {
+      requestAnimationFrame(animate);
+      const dt = Math.min((now - lastTime) / 1000, 0.05);
+      lastTime = now;
+
+      frameCount++;
+      if (now - lastFpsTime >= 500) {
+        currentFps = (frameCount * 1000) / (now - lastFpsTime);
+        frameCount = 0;
+        lastFpsTime = now;
+      }
+
+      const M = params.machNumber;
+      const c = params.waveSpeedC;
+      const vs = M * c;
+
+      if (!params.paused) {
+        sourceX += vs * dt;
+        timeSinceEmit += dt;
+
+        if (timeSinceEmit >= params.emitInterval) {
+          timeSinceEmit -= params.emitInterval;
+          emitWavefront(sourceX, 0.01);
+        }
+
+        // Loop source smoothly when it flies across the arena
+        if (sourceX > 12.5) {
+          const shift = -20.0;
+          sourceX += shift;
+          wavefronts.forEach(wf => {
+            if (wf.active) {
+              wf.emitX += shift;
+              wf.group.position.x = wf.emitX;
+            }
+          });
+        }
+
+        // Expand active wavefronts at speed of sound c
+        const maxAge = 4.6;
+        wavefronts.forEach(wf => {
+          if (!wf.active) return;
+          wf.age += dt;
+          if (wf.age > maxAge) {
+            wf.active = false;
+            wf.group.visible = false;
+            return;
+          }
+          wf.radius = Math.max(0.05, wf.age * c);
+          wf.group.scale.setScalar(wf.radius);
+          wf.sphereMesh.visible = params.show3DSpheres;
+
+          const lifeFade = Math.max(0.05, 1.0 - wf.age / maxAge);
+          wf.rMat.opacity = lifeFade * 0.9;
+          wf.sMat.opacity = lifeFade * 0.14;
+        });
+      } else {
+        wavefronts.forEach(wf => {
+          if (wf.active) wf.sphereMesh.visible = params.show3DSpheres;
+        });
+      }
+
+      sourceGroup.position.set(sourceX, 0, 0);
+
+      // Update Velocity Arrow
+      if (M > 0.02) {
+        velArrow.visible = true;
+        const vLen = THREE.MathUtils.clamp(M * 2.0, 0.6, 5.2);
+        velArrow.setLength(vLen, Math.min(0.6, vLen * 0.25), 0.35);
+      } else {
+        velArrow.visible = false;
+      }
+
+      // Update Mach Cone & Shockwave Normals when M >= 1.0
+      if (M >= 1.0) {
+        machConeMesh.visible = true;
+        shockNormalTop.visible = true;
+        shockNormalBot.visible = true;
+
+        const sinMu = 1.0 / Math.max(1.0001, M);
+        const mu = Math.asin(sinMu);
+        const coneLength = 15.0;
+        const coneRadius = coneLength * Math.tan(mu);
+        machConeMesh.scale.set(coneLength, coneRadius, coneRadius);
+
+        // Normal to shockwave cone makes angle (pi/2 - mu) from +X axis
+        const nx = Math.cos(mu);
+        const ny = Math.sin(mu);
+        const midDist = 5.5;
+        shockNormalTop.position.set(-midDist * Math.cos(mu), midDist * Math.sin(mu), 0);
+        shockNormalTop.setDirection(new THREE.Vector3(ny, nx, 0).normalize());
+
+        shockNormalBot.position.set(-midDist * Math.cos(mu), -midDist * Math.sin(mu), 0);
+        shockNormalBot.setDirection(new THREE.Vector3(ny, -nx, 0).normalize());
+      } else {
+        machConeMesh.visible = false;
+        shockNormalTop.visible = false;
+        shockNormalBot.visible = false;
+      }
+
+      // Update HUD
+      let regime = 'Subsonic';
+      if (Math.abs(M - 1.0) < 0.03) regime = 'Transonic (Mach 1)';
+      else if (M > 1.0) regime = 'Supersonic';
+
+      elMach.textContent = `${M.toFixed(2)} (${regime})`;
+      elF0.textContent = `${params.baseFreqF0.toFixed(1)} Hz`;
+
+      if (M < 0.99) {
+        const fFront = params.baseFreqF0 / (1.0 - M);
+        elFfront.textContent = `${fFront.toFixed(1)} Hz`;
+      } else {
+        elFfront.textContent = 'Shockwave (M ≥ 1)';
+      }
+
+      const fBack = params.baseFreqF0 / (1.0 + M);
+      elFback.textContent = `${fBack.toFixed(1)} Hz`;
+
+      if (M >= 1.0) {
+        const muDeg = THREE.MathUtils.radToDeg(Math.asin(1.0 / M));
+        elCone.textContent = `${muDeg.toFixed(1)}°`;
+      } else {
+        elCone.textContent = 'None (M < 1)';
+      }
+
+      controls.update();
+      renderer.render(scene, camera);
+    }
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    requestAnimationFrame(animate);
+  </script>
+</body>
+</html>

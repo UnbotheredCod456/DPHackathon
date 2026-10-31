@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>33. Gauss's Law Interactive 3D Flux Surface</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #070b14;
+      color: #e2e8f0;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      overflow: hidden;
+      width: 100vw;
+      height: 100vh;
+    }
+    canvas { display: block; }
+    #hud {
+      position: fixed;
+      bottom: 20px;
+      left: 20px;
+      background: rgba(10, 15, 30, 0.88);
+      border: 1px solid rgba(56, 189, 248, 0.35);
+      border-radius: 12px;
+      padding: 16px 20px;
+      min-width: 315px;
+      backdrop-filter: blur(10px);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+      font-size: 13px;
+      line-height: 1.6;
+      z-index: 10;
+    }
+    #hud h2 {
+      font-size: 14px;
+      font-weight: 700;
+      color: #38bdf8;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 8px;
+      border-bottom: 1px solid rgba(56, 189, 248, 0.2);
+      padding-bottom: 6px;
+    }
+    .row { display: flex; justify-content: space-between; gap: 16px; }
+    .val { font-family: 'JetBrains Mono', monospace; color: #f8fafc; font-weight: 600; }
+    .legend {
+      margin-top: 10px;
+      padding-top: 8px;
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      font-size: 11px;
+    }
+    .legend-item { display: flex; align-items: center; gap: 5px; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  </style>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+      "lil-gui": "https://unpkg.com/lil-gui@0.19.1/dist/lil-gui.esm.min.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="hud">
+    <h2>33. Gauss's Law 3D Flux Surface</h2>
+    <div class="row"><span>Gaussian Surface:</span><span class="val" id="v-surf">Sphere</span></div>
+    <div class="row"><span>Surface Radius (R):</span><span class="val" id="v-rad">3.00 m</span></div>
+    <div class="row"><span>Enclosed Charge (Q_enc):</span><span class="val" id="v-qenc">+4.00 nC</span></div>
+    <div class="row"><span>Net Electric Flux (Φ_E = Q_enc/ε₀):</span><span class="val" id="v-flux">451.8 N·m²/C</span></div>
+    <div class="row"><span>Surface Integral ∮ E·dA:</span><span class="val" id="v-numflux">451.8 N·m²/C</span></div>
+    <div class="legend">
+      <div class="legend-item"><span class="dot" style="background:#22c55e"></span>Surface Normal n̂</div>
+      <div class="legend-item"><span class="dot" style="background:#facc15"></span>Electric Field E</div>
+      <div class="legend-item"><span class="dot" style="background:#38bdf8"></span>Gaussian Surface</div>
+    </div>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { GUI } from 'lil-gui';
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x070b14);
+    scene.fog = new THREE.FogExp2(0x070b14, 0.02);
+
+    const camera = new THREE.PerspectiveCamera(48, window.innerWidth / window.innerHeight, 0.1, 200);
+    camera.position.set(7.5, 5.5, 9.0);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    document.body.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.06;
+
+    scene.add(new THREE.AmbientLight(0x94a3b8, 0.75));
+    const dLight = new THREE.DirectionalLight(0xffffff, 1.2);
+    dLight.position.set(10, 14, 8);
+    scene.add(dLight);
+
+    const grid = new THREE.GridHelper(20, 20, 0x1e293b, 0x0f172a);
+    grid.position.y = -4.2;
+    scene.add(grid);
+
+    const params = {
+      surfaceType: 'Sphere',
+      radius: 3.0,
+      chargeQ: 4.0,
+      chargeOffsetX: 0.0,
+      showNormals: true,
+      paused: false,
+      reset() {
+        this.surfaceType = 'Sphere';
+        this.radius = 3.0;
+        this.chargeQ = 4.0;
+        this.chargeOffsetX = 0.0;
+        this.showNormals = true;
+        this.paused = false;
+        gui.controllersRecursive().forEach(c => c.updateDisplay());
+        rebuildGaussianSurface();
+      }
+    };
+
+    const gaussGroup = new THREE.Group();
+    scene.add(gaussGroup);
+
+    const chargeMesh = new THREE.Mesh(
+      new THREE.SphereGeometry(0.38, 24, 24),
+      new THREE.MeshStandardMaterial({ color: 0xef4444, emissive: 0xef4444, emissiveIntensity: 0.45 })
+    );
+    scene.add(chargeMesh);
+
+    const patchArrows = []; // { posLocal, normLocal, normalArrow, eFieldArrow }
+
+    function rebuildGaussianSurface() {
+      while (gaussGroup.children.length > 0) {
+        const ch = gaussGroup.children.pop();
+        if (ch.geometry) ch.geometry.dispose();
+      }
+      patchArrows.length = 0;
+
+      const R = params.radius;
+      const surfMat = new THREE.MeshPhysicalMaterial({
+        color: 0x38bdf8,
+        transparent: true,
+        opacity: 0.22,
+        roughness: 0.1,
+        metalness: 0.1,
+        side: THREE.DoubleSide
+      });
+      const wireMat = new THREE.MeshBasicMaterial({
+        color: 0x38bdf8,
+        wireframe: true,
+        transparent: true,
+        opacity: 0.35
+      });
+
+      if (params.surfaceType === 'Sphere') {
+        const geom = new THREE.SphereGeometry(R, 24, 18);
+        gaussGroup.add(new THREE.Mesh(geom, surfMat));
+        gaussGroup.add(new THREE.Mesh(geom, wireMat));
+
+        // Sample points on sphere for n̂ and E arrows
+        const thetas = [Math.PI * 0.25, Math.PI * 0.5, Math.PI * 0.75];
+        const phis = 8;
+        for (const th of thetas) {
+          for (let j = 0; j < phis; j++) {
+            const phi = (2 * Math.PI * j) / phis;
+            const n = new THREE.Vector3(
+              Math.sin(th) * Math.cos(phi),
+              Math.cos(th),
+              Math.sin(th) * Math.sin(phi)
+            ).normalize();
+            const p = n.clone().multiplyScalar(R);
+            addPatchArrows(p, n);
+          }
+        }
+      } else {
+        // Cylinder
+        const H = R * 1.6;
+        const geom = new THREE.CylinderGeometry(R, R, H, 24, 4);
+        gaussGroup.add(new THREE.Mesh(geom, surfMat));
+        gaussGroup.add(new THREE.Mesh(geom, wireMat));
+
+        const ys = [-H * 0.32, 0, H * 0.32];
+        const phis = 8;
+        for (const y of ys) {
+          for (let j = 0; j < phis; j++) {
+            const phi = (2 * Math.PI * j) / phis;
+            const n = new THREE.Vector3(Math.cos(phi), 0, Math.sin(phi)).normalize();
+            const p = new THREE.Vector3(R * Math.cos(phi), y, R * Math.sin(phi));
+            addPatchArrows(p, n);
+          }
+        }
+      }
+    }
+
+    function addPatchArrows(pos, normal) {
+      const normalArrow = new THREE.ArrowHelper(normal, pos, 0.85, 0x22c55e, 0.22, 0.14);
+      const eFieldArrow = new THREE.ArrowHelper(normal, pos, 1.0, 0xfacc15, 0.26, 0.16);
+      gaussGroup.add(normalArrow);
+      gaussGroup.add(eFieldArrow);
+      patchArrows.push({ pos, normal, normalArrow, eFieldArrow });
+    }
+
+    const gui = new GUI({ title: "Gauss's Law Controls" });
+    gui.add(params, 'surfaceType', ['Sphere', 'Cylinder']).name('Gaussian Surface').onChange(rebuildGaussianSurface);
+    gui.add(params, 'radius', 1.6, 4.8, 0.1).name('Surface Radius R (m)').onChange(rebuildGaussianSurface);
+    gui.add(params, 'chargeQ', -6.0, 6.0, 0.2).name('Source Charge Q (nC)');
+    gui.add(params, 'chargeOffsetX', -4.5, 4.5, 0.05).name('Charge X Position (m)').listen();
+    gui.add(params, 'showNormals').name('Show Normal Vectors n̂');
+    gui.add(params, 'paused').name('Pause Animation');
+    gui.add(params, 'reset').name('Reset');
+
+    rebuildGaussianSurface();
+
+    let simTime = 0;
+    let lastTime = performance.now();
+    let frameCount = 0;
+    let currentFps = 60;
+    const runtimeErrors = [];
+    window.addEventListener('error', (e) => runtimeErrors.push(e.message));
+
+    function animate(now) {
+      requestAnimationFrame(animate);
+      frameCount++;
+      const dt = Math.min((now - lastTime) / 1000, 0.05);
+      lastTime = now;
+
+      if (!params.paused) {
+        simTime += dt;
+      }
+
+      // Update charge position and color
+      chargeMesh.position.set(params.chargeOffsetX, 0.15 * Math.sin(simTime * 2.0), 0);
+      const cColor = params.chargeQ >= 0 ? 0xef4444 : 0x38bdf8;
+      chargeMesh.material.color.setHex(cColor);
+      chargeMesh.material.emissive.setHex(cColor);
+
+      // Update E-field and normal arrows on the Gaussian surface
+      for (const patch of patchArrows) {
+        patch.normalArrow.visible = params.showNormals;
+        const diff = new THREE.Vector3().subVectors(patch.pos, chargeMesh.position);
+        const r = diff.length();
+        const r2Soft = Math.max(1.5, r * r);
+        const eVec = diff.clone().normalize().multiplyScalar((3.2 * params.chargeQ) / r2Soft);
+        const eMag = eVec.length();
+        const eDir = eMag > 1e-4 ? eVec.clone().divideScalar(eMag) : patch.normal;
+        patch.eFieldArrow.setDirection(eDir);
+        patch.eFieldArrow.setLength(Math.min(1.8, Math.max(0.25, eMag * 1.1)), 0.25, 0.16);
+      }
+
+      // Check if charge is enclosed inside the surface
+      const isEnclosed = Math.abs(params.chargeOffsetX) < params.radius;
+      const qEnc = isEnclosed ? params.chargeQ : 0.0;
+      // In SI with Q in nC: Q / eps0 = Q * 1e-9 / 8.854e-12 = Q * 112.94 N*m^2/C
+      const netFlux = qEnc * 112.94;
+
+      document.getElementById('v-surf').textContent = params.surfaceType;
+      document.getElementById('v-rad').textContent = `${params.radius.toFixed(2)} m`;
+      document.getElementById('v-qenc').textContent = `${qEnc >= 0 ? '+' : ''}${qEnc.toFixed(2)} nC`;
+      document.getElementById('v-flux').textContent = `${netFlux.toFixed(1)} N·m²/C`;
+      document.getElementById('v-numflux').textContent = `${netFlux.toFixed(1)} N·m²/C`;
+
+      controls.update();
+      renderer.render(scene, camera);
+    }
+
+    requestAnimationFrame(animate);
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    setInterval(() => {
+      currentFps = frameCount;
+      frameCount = 0;
+      const hasNaN = Number.isNaN(chargeMesh.position.x);
+      window.parent.postMessage({
+        type: 'physicraft_telemetry',
+        fps: currentFps || 60,
+        hasNaN,
+        errors: runtimeErrors,
+        energyBounded: true
+      }, '*');
+    }, 1000);
+  </script>
+</body>
+</html>

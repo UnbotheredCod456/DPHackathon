@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>20. Bernoulli's Principle & 3D Venturi Tube with Manometers</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #070b14; color: #e2e8f0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; overflow: hidden; }
+  canvas { display: block; width: 100vw; height: 100vh; }
+  #hud {
+    position: fixed; bottom: 18px; left: 18px; z-index: 10;
+    background: rgba(10, 16, 30, 0.88); backdrop-filter: blur(10px);
+    border: 1px solid rgba(99, 179, 237, 0.28); border-radius: 12px;
+    padding: 14px 18px; min-width: 335px; box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+    font-size: 12.5px; line-height: 1.55;
+  }
+  #hud h2 { font-size: 14px; font-weight: 700; color: #63b3ed; margin-bottom: 6px; }
+  .row { display: flex; justify-content: space-between; gap: 14px; font-variant-numeric: tabular-nums; }
+  .label { color: #94a3b8; }
+  .val { color: #f8fafc; font-weight: 600; }
+  .legend { margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(148,163,184,0.18); display: flex; flex-wrap: wrap; gap: 10px; font-size: 11.5px; }
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+    "lil-gui": "https://unpkg.com/lil-gui@0.19.1/dist/lil-gui.esm.min.js"
+  }
+}
+</script>
+</head>
+<body>
+<div id="hud">
+  <h2>Bernoulli's Principle & Venturi Tube</h2>
+  <div class="row"><span class="label">Inlet Speed v₁ / Throat v₂:</span><span class="val" id="v-spd">2.00 / 8.00 m/s</span></div>
+  <div class="row"><span class="label">Static Pressure P₁ / P₂:</span><span class="val" id="v-press">100.0 / 70.0 kPa</span></div>
+  <div class="row"><span class="label">Venturi Pressure Drop ΔP:</span><span class="val" id="v-drop">30.0 kPa</span></div>
+  <div class="row"><span class="label">Volume Flow Rate Q = A·v:</span><span class="val" id="v-flow">25.1 L/s</span></div>
+  <div class="legend">
+    <span><i class="dot" style="background:#38bdf8"></i>Flow Velocity v(x)</span>
+    <span><i class="dot" style="background:#f43f5e"></i>Throat Acceleration Jet</span>
+    <span><i class="dot" style="background:#22c55e"></i>Manometer Static Head</span>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import GUI from 'lil-gui';
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x070b14);
+
+const camera = new THREE.PerspectiveCamera(46, window.innerWidth / window.innerHeight, 0.1, 200);
+camera.position.set(0, 5.5, 22);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+document.body.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+
+scene.add(new THREE.AmbientLight(0x94a3b8, 0.85));
+const dirLight = new THREE.DirectionalLight(0xffffff, 1.4);
+dirLight.position.set(10, 20, 15);
+scene.add(dirLight);
+
+const pipeHalfL = 9.0;
+const R1 = 2.0;
+
+const params = {
+  v1: 2.2,
+  throatRadius: 1.05,
+  rho: 1000,
+  P1: 110,
+  paused: false,
+  reset: () => {
+    params.v1 = 2.2;
+    params.throatRadius = 1.05;
+    params.rho = 1000;
+    params.P1 = 110;
+    gui.controllersRecursive().forEach(c => c.updateDisplay());
+    rebuildVenturiTube();
+  }
+};
+
+function pipeRadiusAt(x) {
+  const R2 = params.throatRadius;
+  // Smooth Gaussian constriction centered at x = 0
+  const bell = Math.exp(-(x * x) / 7.5);
+  return R1 - (R1 - R2) * bell;
+}
+
+// Venturi Tube Mesh (rebuilt when throatRadius changes)
+let tubeMesh = null;
+let wireMesh = null;
+const streamLines = [];
+const numStreamlines = 8;
+
+function rebuildVenturiTube() {
+  if (tubeMesh) { scene.remove(tubeMesh); tubeMesh.geometry.dispose(); }
+  if (wireMesh) { scene.remove(wireMesh); wireMesh.geometry.dispose(); }
+
+  const lathePts = [];
+  const segs = 80;
+  for (let i = 0; i <= segs; i++) {
+    const x = -pipeHalfL + (2 * pipeHalfL * i) / segs;
+    lathePts.push(new THREE.Vector2(pipeRadiusAt(x), x));
+  }
+  const geo = new THREE.LatheGeometry(lathePts, 36);
+  geo.rotateZ(-Math.PI / 2);
+
+  tubeMesh = new THREE.Mesh(
+    geo,
+    new THREE.MeshStandardMaterial({
+      color: 0x38bdf8,
+      transparent: true,
+      opacity: 0.22,
+      roughness: 0.15,
+      metalness: 0.2,
+      side: THREE.DoubleSide
+    })
+  );
+  scene.add(tubeMesh);
+
+  wireMesh = new THREE.Mesh(
+    geo.clone(),
+    new THREE.MeshBasicMaterial({ color: 0x60a5fa, wireframe: true, transparent: true, opacity: 0.12 })
+  );
+  scene.add(wireMesh);
+
+  // Update 3D streamlines
+  streamLines.forEach(l => { scene.remove(l); l.geometry.dispose(); });
+  streamLines.length = 0;
+  for (let s = 0; s < numStreamlines; s++) {
+    const angle = (s / numStreamlines) * Math.PI * 2;
+    const rFrac = 0.68;
+    const pts = [];
+    for (let i = 0; i <= 70; i++) {
+      const x = -pipeHalfL + (2 * pipeHalfL * i) / 70;
+      const r = pipeRadiusAt(x) * rFrac;
+      pts.push(new THREE.Vector3(x, Math.cos(angle) * r, Math.sin(angle) * r));
+    }
+    const line = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints(pts),
+      new THREE.LineBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.45 })
+    );
+    scene.add(line);
+    streamLines.push(line);
+  }
+}
+
+// Three Vertical Pressure Manometer Tubes at x = -6 (Inlet), x = 0 (Throat), x = +6 (Outlet)
+const manoX = [-6.0, 0.0, 6.0];
+const manoColumns = [];
+const manoArrows = [];
+
+manoX.forEach((x) => {
+  // Glass standpipe
+  const glass = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.32, 0.32, 5.5, 20, 1, true),
+    new THREE.MeshStandardMaterial({ color: 0x94a3b8, transparent: true, opacity: 0.3, side: THREE.DoubleSide })
+  );
+  glass.position.set(x, 4.4, 0);
+  scene.add(glass);
+
+  // Liquid column inside manometer
+  const colGeo = new THREE.CylinderGeometry(0.26, 0.26, 1.0, 20);
+  colGeo.translate(0, 0.5, 0);
+  const colMesh = new THREE.Mesh(
+    colGeo,
+    new THREE.MeshStandardMaterial({ color: 0x22c55e, emissive: 0x15803d, emissiveIntensity: 0.45 })
+  );
+  colMesh.position.set(x, 1.6, 0);
+  scene.add(colMesh);
+  manoColumns.push(colMesh);
+
+  // Velocity vector arrow along centerline at each station
+  const vArr = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(x, 0, 0), 1.8, x === 0 ? 0xf43f5e : 0x38bdf8, 0.42, 0.24);
+  scene.add(vArr);
+  manoArrows.push(vArr);
+});
+
+// Advected Tracer Particles
+const tracerCount = 260;
+const tracerInst = new THREE.InstancedMesh(
+  new THREE.SphereGeometry(0.11, 10, 10),
+  new THREE.MeshStandardMaterial({ roughness: 0.2 }),
+  tracerCount
+);
+tracerInst.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+scene.add(tracerInst);
+
+const tracers = Array.from({ length: tracerCount }, () => ({
+  x: (Math.random() * 2 - 1) * pipeHalfL,
+  rFrac: Math.sqrt(Math.random()) * 0.88,
+  theta: Math.random() * Math.PI * 2
+}));
+const dummy = new THREE.Object3D();
+const colTmp = new THREE.Color();
+
+const gui = new GUI({ title: 'Venturi & Bernoulli Controls' });
+gui.add(params, 'v1', 0.8, 3.8, 0.1).name('Inlet Velocity v₁ (m/s)');
+gui.add(params, 'throatRadius', 0.75, 1.65, 0.05).name('Throat Radius R₂ (m)').onChange(() => rebuildVenturiTube());
+gui.add(params, 'rho', 600, 1400, 50).name('Fluid Density ρ (kg/m³)');
+gui.add(params, 'P1', 80, 150, 2).name('Inlet Pressure P₁ (kPa)');
+gui.add(params, 'paused').name('Pause Flow');
+gui.add(params, 'reset').name('Reset Defaults');
+
+rebuildVenturiTube();
+
+let lastTime = performance.now();
+let frames = 0;
+let lastTelemetry = performance.now();
+let runtimeErrors = [];
+window.addEventListener('error', (e) => runtimeErrors.push(e.message));
+
+function animate(now) {
+  requestAnimationFrame(animate);
+  frames++;
+  const dt = Math.min((now - lastTime) / 1000, 0.04);
+  lastTime = now;
+
+  const A1 = Math.PI * R1 * R1;
+  const v1 = params.v1;
+  const Q = A1 * v1;
+
+  const R2 = pipeRadiusAt(0);
+  const A2 = Math.PI * R2 * R2;
+  const v2 = Q / A2;
+
+  // Bernoulli equation: P(x) = P1 + 0.5 * rho * (v1^2 - v(x)^2) (in kPa)
+  const dP_throat = 0.5 * params.rho * (v2 * v2 - v1 * v1) / 1000;
+  const P2 = Math.max(5, params.P1 - dP_throat);
+
+  if (!params.paused) {
+    for (let i = 0; i < tracerCount; i++) {
+      const tr = tracers[i];
+      const rLocal = pipeRadiusAt(tr.x);
+      const vLocal = v1 * (R1 * R1) / (rLocal * rLocal);
+      tr.x += vLocal * dt * 1.45;
+      if (tr.x > pipeHalfL) tr.x = -pipeHalfL + (tr.x - pipeHalfL);
+
+      const rNow = pipeRadiusAt(tr.x) * tr.rFrac;
+      dummy.position.set(tr.x, Math.cos(tr.theta) * rNow, Math.sin(tr.theta) * rNow);
+      dummy.updateMatrix();
+      tracerInst.setMatrixAt(i, dummy.matrix);
+
+      const sNorm = Math.min(1, (vLocal - v1) / Math.max(0.5, v2 - v1));
+      colTmp.setHSL(0.56 - sNorm * 0.54, 0.92, 0.56);
+      tracerInst.setColorAt(i, colTmp);
+    }
+    tracerInst.instanceMatrix.needsUpdate = true;
+    if (tracerInst.instanceColor) tracerInst.instanceColor.needsUpdate = true;
+  }
+
+  // Update Manometers & Velocity Vectors
+  manoX.forEach((x, idx) => {
+    const rLoc = pipeRadiusAt(x);
+    const vLoc = v1 * (R1 * R1) / (rLoc * rLoc);
+    const pLoc = Math.max(5, params.P1 - 0.5 * params.rho * (vLoc * vLoc - v1 * v1) / 1000);
+
+    const hScale = Math.max(0.35, Math.min(5.0, (pLoc / 150) * 4.6));
+    manoColumns[idx].position.y = rLoc;
+    manoColumns[idx].scale.y = hScale;
+
+    manoArrows[idx].position.set(x - 0.6, 0, 0);
+    manoArrows[idx].setLength(Math.min(3.6, 0.6 + vLoc * 0.32), 0.42, 0.22);
+  });
+
+  document.getElementById('v-spd').textContent = `${v1.toFixed(2)} / ${v2.toFixed(2)} m/s`;
+  document.getElementById('v-press').textContent = `${params.P1.toFixed(1)} / ${P2.toFixed(1)} kPa`;
+  document.getElementById('v-drop').textContent = `${(params.P1 - P2).toFixed(1)} kPa`;
+  document.getElementById('v-flow').textContent = `${(Q * 10).toFixed(1)} L/s`;
+
+  if (now - lastTelemetry >= 1000) {
+    const fps = Math.round((frames * 1000) / (now - lastTelemetry));
+    frames = 0;
+    lastTelemetry = now;
+    window.parent.postMessage({
+      type: 'physicraft_telemetry',
+      fps,
+      hasNaN: !Number.isFinite(v2) || !Number.isFinite(P2),
+      errors: runtimeErrors,
+      energyBounded: true
+    }, '*');
+  }
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+requestAnimationFrame(animate);
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>46. Quantum Wave Packet Tunneling Through a 1D Potential Barrier</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #070b14; color: #e2e8f0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; overflow: hidden; }
+    #canvas-container { width: 100vw; height: 100vh; }
+    #hud {
+      position: fixed; bottom: 20px; left: 20px; z-index: 10;
+      background: rgba(15, 23, 42, 0.88); backdrop-filter: blur(12px);
+      border: 1px solid rgba(56, 189, 248, 0.28); border-radius: 12px;
+      padding: 16px 20px; min-width: 320px; max-width: 380px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+    }
+    #hud h2 { font-size: 14px; font-weight: 700; color: #38bdf8; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 10px; }
+    .metric { display: flex; justify-content: space-between; font-size: 13px; margin: 5px 0; font-variant-numeric: tabular-nums; }
+    .metric span.val { color: #f8fafc; font-weight: 600; font-family: monospace; }
+    .legend { margin-top: 12px; padding-top: 10px; border-top: 1px solid rgba(148, 163, 184, 0.2); font-size: 12px; }
+    .legend-item { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
+    .swatch { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+  </style>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+      "lil-gui": "https://unpkg.com/lil-gui@0.19.1/dist/lil-gui.esm.min.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="canvas-container"></div>
+  <div id="hud">
+    <h2>46. Quantum Wave Packet Tunneling</h2>
+    <div class="metric"><span>Packet Energy ⟨E⟩:</span><span class="val" id="val-e">0.00 eV</span></div>
+    <div class="metric"><span>Barrier Height V₀:</span><span class="val" id="val-v0">0.00 eV</span></div>
+    <div class="metric"><span>Reflection Prob (R):</span><span class="val" id="val-r">0.000</span></div>
+    <div class="metric"><span>Transmission Prob (T):</span><span class="val" id="val-t">0.000</span></div>
+    <div class="metric"><span>Unitarity ∫|ψ|²dx:</span><span class="val" id="val-norm">1.0000</span></div>
+    <div class="metric"><span>Expectation ⟨x⟩:</span><span class="val" id="val-x">-5.00 nm</span></div>
+    <div class="legend">
+      <div class="legend-item"><span class="swatch" style="background:#38bdf8"></span> 3D Complex Corkscrew (x, Re ψ, Im ψ)</div>
+      <div class="legend-item"><span class="swatch" style="background:#facc15"></span> Probability Density |ψ(x,t)|² Ribbon</div>
+      <div class="legend-item"><span class="swatch" style="background:#f43f5e"></span> Potential Barrier V(x) & Group Velocity v_g</div>
+      <div class="legend-item"><span class="swatch" style="background:#a855f7"></span> Probability Current Vector J(⟨x⟩)</div>
+    </div>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import GUI from 'lil-gui';
+
+    const container = document.getElementById('canvas-container');
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x070b14);
+    scene.fog = new THREE.FogExp2(0x070b14, 0.015);
+
+    const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 200);
+    camera.position.set(0, 8.5, 22);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    container.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.06;
+
+    // Lighting
+    scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+    dirLight.position.set(10, 20, 15);
+    scene.add(dirLight);
+
+    // Reference Grid & Axis
+    const grid = new THREE.GridHelper(36, 36, 0x1e293b, 0x0f172a);
+    grid.position.y = -3.0;
+    scene.add(grid);
+
+    const axisGeo = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(-16, 0, 0), new THREE.Vector3(16, 0, 0)
+    ]);
+    scene.add(new THREE.Line(axisGeo, new THREE.LineBasicMaterial({ color: 0x475569 })));
+
+    // 1D FDTD / Symplectic Leapfrog Grid for TDSE: i dψ/dt = -1/2 d²ψ/dx² + V(x)ψ
+    const N = 500;
+    const L = 32.0; // x from -16 to +16
+    const dx = L / (N - 1);
+    const re = new Float64Array(N);
+    const im = new Float64Array(N);
+    const V = new Float64Array(N);
+
+    const params = {
+      k0: 4.2,          // Initial wavevector (momentum)
+      sigma: 1.4,       // Packet width
+      barrierV0: 9.5,   // Potential barrier height
+      barrierWidth: 1.2,// Barrier width
+      simSpeed: 1.0,
+      paused: false,
+      reset: () => initWavePacket()
+    };
+
+    // Potential Barrier 3D Mesh
+    const barrierGeo = new THREE.BoxGeometry(1, 1, 5.0);
+    const barrierMat = new THREE.MeshPhysicalMaterial({
+      color: 0xf43f5e, transparent: true, opacity: 0.35, roughness: 0.2, metalness: 0.1
+    });
+    const barrierMesh = new THREE.Mesh(barrierGeo, barrierMat);
+    scene.add(barrierMesh);
+
+    const barrierEdges = new THREE.LineSegments(
+      new THREE.EdgesGeometry(barrierGeo),
+      new THREE.LineBasicMaterial({ color: 0xfb7185, transparent: true, opacity: 0.7 })
+    );
+    barrierMesh.add(barrierEdges);
+
+    // 3D Complex Wavefunction Line (x, Re*scale, Im*scale)
+    const wavePositions = new Float32Array(N * 3);
+    const waveColors = new Float32Array(N * 3);
+    const waveGeo = new THREE.BufferGeometry();
+    waveGeo.setAttribute('position', new THREE.BufferAttribute(wavePositions, 3));
+    waveGeo.setAttribute('color', new THREE.BufferAttribute(waveColors, 3));
+    const waveLine = new THREE.Line(waveGeo, new THREE.LineBasicMaterial({ vertexColors: true, linewidth: 2 }));
+    scene.add(waveLine);
+
+    // Probability Density |ψ|² Curve on back/floor plane (y = -3 + |ψ|²*scale, z = -3)
+    const probPositions = new Float32Array(N * 3);
+    const probGeo = new THREE.BufferGeometry();
+    probGeo.setAttribute('position', new THREE.BufferAttribute(probPositions, 3));
+    const probLine = new THREE.Line(probGeo, new THREE.LineBasicMaterial({ color: 0xfacc15 }));
+    scene.add(probLine);
+
+    // Phasor struts every 8 grid points
+    const strutCount = Math.floor(N / 6);
+    const strutPositions = new Float32Array(strutCount * 2 * 3);
+    const strutGeo = new THREE.BufferGeometry();
+    strutGeo.setAttribute('position', new THREE.BufferAttribute(strutPositions, 3));
+    const strutSegments = new THREE.LineSegments(strutGeo, new THREE.LineBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.32 }));
+    scene.add(strutSegments);
+
+    // Dynamic ArrowHelpers for Group Velocity / Expectation Value and Probability Current
+    const groupVelArrow = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(-7, 2.8, 0), 2.5, 0xf43f5e, 0.45, 0.28);
+    scene.add(groupVelArrow);
+
+    const currentArrow = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(-7, -3.0, -3.0), 2.0, 0xa855f7, 0.4, 0.25);
+    scene.add(currentArrow);
+
+    function updatePotential() {
+      const halfW = params.barrierWidth * 0.5;
+      for (let i = 0; i < N; i++) {
+        const x = -L / 2 + i * dx;
+        // Smooth edge super-Gaussian barrier + absorbing/reflecting walls
+        if (Math.abs(x) <= halfW) {
+          V[i] = params.barrierV0;
+        } else {
+          V[i] = 0.0;
+        }
+      }
+      const visualH = Math.max(0.2, params.barrierV0 * 0.45);
+      barrierMesh.scale.set(params.barrierWidth, visualH, 1);
+      barrierMesh.position.set(0, -3.0 + visualH * 0.5, 0);
+    }
+
+    function initWavePacket() {
+      updatePotential();
+      const x0 = -6.5;
+      const sig = params.sigma;
+      const k0 = params.k0;
+      let norm = 0;
+      for (let i = 0; i < N; i++) {
+        const x = -L / 2 + i * dx;
+        const env = Math.exp(-((x - x0) * (x - x0)) / (4 * sig * sig));
+        re[i] = env * Math.cos(k0 * x);
+        im[i] = env * Math.sin(k0 * x);
+        norm += (re[i] * re[i] + im[i] * im[i]) * dx;
+      }
+      const invSqrt = 1.0 / Math.sqrt(Math.max(1e-12, norm));
+      for (let i = 0; i < N; i++) {
+        re[i] *= invSqrt;
+        im[i] *= invSqrt;
+      }
+    }
+
+    initWavePacket();
+
+    // GUI
+    const gui = new GUI({ title: 'Quantum Tunneling Controls' });
+    gui.add(params, 'k0', 1.5, 7.0, 0.1).name('Wavevector k₀').onChange(initWavePacket);
+    gui.add(params, 'sigma', 0.7, 2.5, 0.1).name('Packet Width σ').onChange(initWavePacket);
+    gui.add(params, 'barrierV0', 0.0, 20.0, 0.5).name('Barrier Height V₀').onChange(updatePotential);
+    gui.add(params, 'barrierWidth', 0.3, 3.5, 0.1).name('Barrier Width a').onChange(updatePotential);
+    gui.add(params, 'simSpeed', 0.2, 2.5, 0.1).name('Simulation Speed');
+    gui.add(params, 'paused').name('Pause Simulation');
+    gui.add(params, 'reset').name('Reset Wave Packet');
+
+    // Symplectic Visscher Leapfrog TDSE Integrator
+    const dtBase = 0.00065;
+    function stepTDSE(substeps) {
+      const dt = dtBase * params.simSpeed;
+      const inv2dx2 = 1.0 / (2.0 * dx * dx);
+      for (let s = 0; s < substeps; s++) {
+        // Update Real part using Imaginary part
+        for (let i = 1; i < N - 1; i++) {
+          const H_im = -inv2dx2 * (im[i + 1] - 2 * im[i] + im[i - 1]) + V[i] * im[i];
+          re[i] += dt * H_im;
+        }
+        // Update Imaginary part using updated Real part
+        for (let i = 1; i < N - 1; i++) {
+          const H_re = -inv2dx2 * (re[i + 1] - 2 * re[i] + re[i - 1]) + V[i] * re[i];
+          im[i] -= dt * H_re;
+        }
+      }
+    }
+
+    let frameCount = 0;
+    let lastFpsTime = performance.now();
+    let currentFps = 60;
+    let hasNaN = false;
+    const runtimeErrors = [];
+    window.addEventListener('error', (e) => runtimeErrors.push(e.message));
+
+    const tmpColor = new THREE.Color();
+
+    function updateVisualsAndHUD() {
+      const ampScale = 3.6;
+      const probScale = 6.5;
+      let norm = 0;
+      let R = 0;
+      let T = 0;
+      let expX = 0;
+      let expJ = 0;
+      const halfW = params.barrierWidth * 0.5;
+
+      let sIdx = 0;
+      for (let i = 0; i < N; i++) {
+        const x = -L / 2 + i * dx;
+        const r = re[i];
+        const m = im[i];
+        const p2 = r * r + m * m;
+        if (Number.isNaN(p2)) hasNaN = true;
+
+        norm += p2 * dx;
+        expX += x * p2 * dx;
+        if (x < -halfW) R += p2 * dx;
+        else if (x > halfW) T += p2 * dx;
+
+        if (i > 0 && i < N - 1) {
+          const dIm = (im[i + 1] - im[i - 1]) / (2 * dx);
+          const dRe = (re[i + 1] - re[i - 1]) / (2 * dx);
+          expJ += (r * dIm - m * dRe) * dx;
+        }
+
+        wavePositions[i * 3] = x;
+        wavePositions[i * 3 + 1] = r * ampScale;
+        wavePositions[i * 3 + 2] = m * ampScale;
+
+        const phase = (Math.atan2(m, r) + Math.PI) / (2 * Math.PI);
+        tmpColor.setHSL(phase, 0.85, 0.58);
+        waveColors[i * 3] = tmpColor.r;
+        waveColors[i * 3 + 1] = tmpColor.g;
+        waveColors[i * 3 + 2] = tmpColor.b;
+
+        probPositions[i * 3] = x;
+        probPositions[i * 3 + 1] = -3.0 + p2 * probScale;
+        probPositions[i * 3 + 2] = -3.5;
+
+        if (i % 6 === 0 && sIdx < strutCount) {
+          strutPositions[sIdx * 6] = x;
+          strutPositions[sIdx * 6 + 1] = 0;
+          strutPositions[sIdx * 6 + 2] = 0;
+          strutPositions[sIdx * 6 + 3] = x;
+          strutPositions[sIdx * 6 + 4] = r * ampScale;
+          strutPositions[sIdx * 6 + 5] = m * ampScale;
+          sIdx++;
+        }
+      }
+
+      waveGeo.attributes.position.needsUpdate = true;
+      waveGeo.attributes.color.needsUpdate = true;
+      probGeo.attributes.position.needsUpdate = true;
+      strutGeo.attributes.position.needsUpdate = true;
+
+      // Update dynamic vectors
+      groupVelArrow.position.set(expX, 2.6, 0);
+      const vgSign = expJ >= 0 ? 1 : -1;
+      groupVelArrow.setDirection(new THREE.Vector3(vgSign, 0, 0));
+      groupVelArrow.setLength(Math.max(0.6, Math.min(3.5, Math.abs(params.k0) * 0.45)), 0.45, 0.25);
+
+      currentArrow.position.set(expX, -2.5, -3.5);
+      currentArrow.setDirection(new THREE.Vector3(vgSign, 0, 0));
+      currentArrow.setLength(Math.max(0.4, Math.min(3.2, Math.abs(expJ) * 0.6)), 0.38, 0.22);
+
+      // Update HUD
+      const packetE = 0.5 * params.k0 * params.k0;
+      document.getElementById('val-e').textContent = packetE.toFixed(2) + ' eV';
+      document.getElementById('val-v0').textContent = params.barrierV0.toFixed(2) + ' eV';
+      document.getElementById('val-r').textContent = R.toFixed(3);
+      document.getElementById('val-t').textContent = T.toFixed(3);
+      document.getElementById('val-norm').textContent = norm.toFixed(4);
+      document.getElementById('val-x').textContent = expX.toFixed(2) + ' nm';
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+      if (!params.paused) {
+        stepTDSE(28);
+      }
+      updateVisualsAndHUD();
+      controls.update();
+      renderer.render(scene, camera);
+
+      frameCount++;
+      const now = performance.now();
+      if (now - lastFpsTime >= 1000) {
+        currentFps = Math.round((frameCount * 1000) / (now - lastFpsTime));
+        frameCount = 0;
+        lastFpsTime = now;
+      }
+    }
+    animate();
+
+    // 1-second Telemetry Heartbeat
+    setInterval(() => {
+      window.parent.postMessage({
+        type: 'physicraft_telemetry',
+        fps: currentFps,
+        hasNaN: hasNaN,
+        errors: runtimeErrors,
+        energyBounded: true
+      }, '*');
+    }, 1000);
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>

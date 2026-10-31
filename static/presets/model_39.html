@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>39. 3D AC Generator & Step-Up/Step-Down Transformer</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #070b14; color: #e2e8f0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; overflow: hidden; }
+    canvas { display: block; width: 100vw; height: 100vh; }
+    #hud {
+      position: fixed; bottom: 16px; left: 16px; z-index: 10;
+      background: rgba(10, 16, 30, 0.88); backdrop-filter: blur(10px);
+      border: 1px solid rgba(56, 189, 248, 0.28); border-radius: 12px;
+      padding: 14px 18px; min-width: 335px; box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+      font-size: 12.5px; line-height: 1.55;
+    }
+    #hud h2 { font-size: 14px; font-weight: 700; color: #38bdf8; margin-bottom: 8px; }
+    .row { display: flex; justify-content: space-between; gap: 16px; font-variant-numeric: tabular-nums; }
+    .lbl { color: #94a3b8; }
+    .val { color: #f8fafc; font-weight: 600; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; margin-top: 6px; }
+    .badge-up { background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid rgba(16,185,129,0.4); }
+    .badge-down { background: rgba(56, 189, 248, 0.2); color: #38bdf8; border: 1px solid rgba(56,189,248,0.4); }
+    .legend { margin-top: 10px; padding-top: 8px; border-top: 1px solid rgba(148,163,184,0.18); display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; font-size: 11.5px; }
+    .leg-item { display: flex; align-items: center; gap: 6px; color: #cbd5e1; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  </style>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+      "lil-gui": "https://unpkg.com/lil-gui@0.19.1/dist/lil-gui.esm.min.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="hud">
+    <h2>39. 3D AC Generator &amp; Transformer</h2>
+    <div class="row"><span class="lbl">Magnetic Flux Φ(t):</span><span class="val" id="fluxVal">0.00 Wb</span></div>
+    <div class="row"><span class="lbl">Primary Voltage V_p(t):</span><span class="val" id="vpVal">0.00 V</span></div>
+    <div class="row"><span class="lbl">Secondary Voltage V_s(t):</span><span class="val" id="vsVal">0.00 V</span></div>
+    <div class="row"><span class="lbl">Turns Ratio N_s / N_p:</span><span class="val" id="ratioVal">2.00</span></div>
+    <div class="row"><span class="lbl">Primary / Secondary RMS I:</span><span class="val" id="currVal">0.00 A / 0.00 A</span></div>
+    <div class="row"><span class="lbl">Instantaneous Power P(t):</span><span class="val" id="powVal">0.00 W</span></div>
+    <div id="txBadge" class="badge badge-up">Step-Up Transformer (N_s &gt; N_p)</div>
+    <div class="legend">
+      <div class="leg-item"><span class="dot" style="background:#38bdf8"></span>Stator B Field</div>
+      <div class="leg-item"><span class="dot" style="background:#22c55e"></span>Coil Area Normal n̂</div>
+      <div class="leg-item"><span class="dot" style="background:#f97316"></span>Primary EMF V_p(t)</div>
+      <div class="leg-item"><span class="dot" style="background:#a855f7"></span>Secondary V_s(t)</div>
+    </div>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import GUI from 'lil-gui';
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x070b14);
+    scene.fog = new THREE.FogExp2(0x070b14, 0.012);
+
+    const camera = new THREE.PerspectiveCamera(48, window.innerWidth / window.innerHeight, 0.1, 200);
+    camera.position.set(0, 9, 25);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    document.body.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.06;
+
+    scene.add(new THREE.AmbientLight(0x94a3b8, 0.8));
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.35);
+    dirLight.position.set(12, 22, 16);
+    scene.add(dirLight);
+
+    const grid = new THREE.GridHelper(36, 36, 0x1e293b, 0x0f172a);
+    grid.position.y = -5;
+    scene.add(grid);
+
+    // ================= LEFT: 3D AC GENERATOR (x = -7) =================
+    const genGroup = new THREE.Group();
+    genGroup.position.set(-7, 0, 0);
+    scene.add(genGroup);
+
+    // North (Red) and South (Blue) Stator Poles
+    const poleGeo = new THREE.BoxGeometry(1.4, 4.2, 3.2);
+    const nPole = new THREE.Mesh(poleGeo, new THREE.MeshStandardMaterial({ color: 0xef4444, roughness: 0.3 }));
+    const sPole = new THREE.Mesh(poleGeo, new THREE.MeshStandardMaterial({ color: 0x3b82f6, roughness: 0.3 }));
+    nPole.position.set(-3.4, 0, 0);
+    sPole.position.set(3.4, 0, 0);
+    genGroup.add(nPole, sPole);
+
+    // Stator B-field arrows (+X)
+    for (let y = -1.2; y <= 1.2; y += 1.2) {
+      for (let z = -0.8; z <= 0.8; z += 1.6) {
+        const bArr = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(-2.4, y, z), 4.8, 0x38bdf8, 0.4, 0.22);
+        bArr.line.material.transparent = true; bArr.line.material.opacity = 0.35;
+        genGroup.add(bArr);
+      }
+    }
+
+    // Rotating Armature Coil + Area Normal Arrow
+    const armatureGroup = new THREE.Group();
+    const frameGeo = new THREE.BoxGeometry(3.2, 0.16, 2.4);
+    const frameMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, metalness: 0.75, roughness: 0.25 });
+    const coilFrame = new THREE.Mesh(frameGeo, frameMat);
+    armatureGroup.add(coilFrame);
+    genGroup.add(armatureGroup);
+
+    const normalArrow = new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), new THREE.Vector3(-7, 0, 0), 2.6, 0x22c55e, 0.45, 0.28);
+    scene.add(normalArrow);
+
+    // ================= RIGHT: LAMINATED IRON CORE TRANSFORMER (x = +6.5) =================
+    const txGroup = new THREE.Group();
+    txGroup.position.set(6.5, 0, 0);
+    scene.add(txGroup);
+
+    const coreMat = new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.8, roughness: 0.35 });
+    const limbGeo = new THREE.BoxGeometry(1.1, 4.8, 1.1);
+    const yokeGeo = new THREE.BoxGeometry(5.2, 1.1, 1.1);
+    const leftLimb = new THREE.Mesh(limbGeo, coreMat); leftLimb.position.x = -2.0;
+    const rightLimb = new THREE.Mesh(limbGeo, coreMat); rightLimb.position.x = 2.0;
+    const topYoke = new THREE.Mesh(yokeGeo, coreMat); topYoke.position.y = 2.2;
+    const botYoke = new THREE.Mesh(yokeGeo, coreMat); botYoke.position.y = -2.2;
+    txGroup.add(leftLimb, rightLimb, topYoke, botYoke);
+
+    const primaryWindingsGroup = new THREE.Group();
+    const secondaryWindingsGroup = new THREE.Group();
+    txGroup.add(primaryWindingsGroup, secondaryWindingsGroup);
+
+    // Core Flux Arrow
+    const fluxArrow = new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), new THREE.Vector3(4.5, 0, 0.8), 2.2, 0xf97316, 0.45, 0.26);
+    const vsArrow = new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), new THREE.Vector3(8.5, 0, 0.8), 2.2, 0xa855f7, 0.45, 0.26);
+    scene.add(fluxArrow, vsArrow);
+
+    // Load Bulb above Secondary
+    const bulbMat = new THREE.MeshStandardMaterial({ color: 0xfef08a, emissive: 0xfacc15, emissiveIntensity: 0.5, roughness: 0.2 });
+    const bulbMesh = new THREE.Mesh(new THREE.SphereGeometry(0.55, 24, 24), bulbMat);
+    bulbMesh.position.set(8.5, 3.6, 0);
+    scene.add(bulbMesh);
+
+    // ================= 3D OSCILLOSCOPE WAVERIBBONS (Top Back) =================
+    const WAVE_PTS = 120;
+    const vpPositions = new Float32Array(WAVE_PTS * 3);
+    const vsPositions = new Float32Array(WAVE_PTS * 3);
+    for (let i = 0; i < WAVE_PTS; i++) {
+      const x = -5 + (i / (WAVE_PTS - 1)) * 10;
+      vpPositions[i * 3] = x; vpPositions[i * 3 + 2] = -4.5;
+      vsPositions[i * 3] = x; vsPositions[i * 3 + 2] = -4.5;
+    }
+    const vpGeo = new THREE.BufferGeometry();
+    vpGeo.setAttribute('position', new THREE.BufferAttribute(vpPositions, 3));
+    const vsGeo = new THREE.BufferGeometry();
+    vsGeo.setAttribute('position', new THREE.BufferAttribute(vsPositions, 3));
+    scene.add(new THREE.Line(vpGeo, new THREE.LineBasicMaterial({ color: 0xf97316 })));
+    scene.add(new THREE.Line(vsGeo, new THREE.LineBasicMaterial({ color: 0xa855f7 })));
+
+    const params = {
+      omega: 3.0,
+      B: 1.5,
+      area: 2.0,
+      Np: 10,
+      Ns: 20,
+      Rload: 25.0,
+      paused: false,
+      reset: () => { theta = 0; rebuildWindings(); }
+    };
+
+    let theta = 0;
+
+    function rebuildWindings() {
+      while (primaryWindingsGroup.children.length) primaryWindingsGroup.remove(primaryWindingsGroup.children[0]);
+      while (secondaryWindingsGroup.children.length) secondaryWindingsGroup.remove(secondaryWindingsGroup.children[0]);
+
+      const pMat = new THREE.MeshStandardMaterial({ color: 0xf97316, metalness: 0.7, roughness: 0.25 });
+      const sMat = new THREE.MeshStandardMaterial({ color: 0xa855f7, metalness: 0.7, roughness: 0.25 });
+      const turnGeo = new THREE.TorusGeometry(0.82, 0.07, 12, 32);
+
+      const pCount = Math.min(24, Math.max(3, Math.round(params.Np / 2)));
+      for (let i = 0; i < pCount; i++) {
+        const m = new THREE.Mesh(turnGeo, pMat);
+        m.rotation.x = Math.PI / 2;
+        m.position.set(-2.0, -1.4 + (2.8 * i) / Math.max(1, pCount - 1), 0);
+        primaryWindingsGroup.add(m);
+      }
+
+      const sCount = Math.min(28, Math.max(3, Math.round(params.Ns / 2)));
+      for (let i = 0; i < sCount; i++) {
+        const m = new THREE.Mesh(turnGeo, sMat);
+        m.rotation.x = Math.PI / 2;
+        m.position.set(2.0, -1.4 + (2.8 * i) / Math.max(1, sCount - 1), 0);
+        secondaryWindingsGroup.add(m);
+      }
+    }
+
+    const gui = new GUI({ title: 'AC Generator & Transformer' });
+    gui.add(params, 'omega', 0.5, 8.0, 0.1).name('Gen Speed ω (rad/s)');
+    gui.add(params, 'B', 0.5, 3.0, 0.1).name('Stator Field B (T)');
+    gui.add(params, 'Np', 4, 40, 2).name('Primary Turns N_p').onChange(rebuildWindings);
+    gui.add(params, 'Ns', 4, 60, 2).name('Secondary Turns N_s').onChange(rebuildWindings);
+    gui.add(params, 'Rload', 5.0, 100.0, 1.0).name('Load R_L (Ω)');
+    gui.add(params, 'paused').name('Pause');
+    gui.add(params, 'reset').name('Reset Phase');
+
+    rebuildWindings();
+
+    const fluxValEl = document.getElementById('fluxVal');
+    const vpValEl = document.getElementById('vpVal');
+    const vsValEl = document.getElementById('vsVal');
+    const ratioValEl = document.getElementById('ratioVal');
+    const currValEl = document.getElementById('currVal');
+    const powValEl = document.getElementById('powVal');
+    const txBadge = document.getElementById('txBadge');
+
+    let frameCount = 0;
+    let lastTeleTime = performance.now();
+    const runtimeErrors = [];
+    window.addEventListener('error', (e) => runtimeErrors.push(e.message));
+
+    function animate() {
+      requestAnimationFrame(animate);
+      frameCount++;
+
+      if (!params.paused) {
+        theta += params.omega * (1 / 60);
+      }
+
+      armatureGroup.rotation.z = theta;
+      const normalVec = new THREE.Vector3(-Math.sin(theta), Math.cos(theta), 0).normalize();
+      normalArrow.setDirection(normalVec);
+
+      const flux = params.B * params.area * Math.cos(theta);
+      const vpPeak = params.Np * params.B * params.area * params.omega;
+      const vp = vpPeak * Math.sin(theta);
+      const ratio = params.Ns / Math.max(1, params.Np);
+      const vs = vp * ratio;
+
+      const vsRms = (vpPeak * ratio) / Math.sqrt(2);
+      const isRms = vsRms / params.Rload;
+      const ipRms = isRms * ratio;
+      const pInst = (vs * vs) / params.Rload;
+
+      // Update wave ribbons
+      for (let i = 0; i < WAVE_PTS; i++) {
+        const ph = theta - (WAVE_PTS - 1 - i) * 0.08;
+        const vpi = vpPeak * Math.sin(ph);
+        const vsi = vpi * ratio;
+        vpPositions[i * 3 + 1] = 4.2 + THREE.MathUtils.clamp(vpi * 0.018, -2.2, 2.2);
+        vsPositions[i * 3 + 1] = 4.2 + THREE.MathUtils.clamp(vsi * 0.018, -2.2, 2.2);
+      }
+      vpGeo.attributes.position.needsUpdate = true;
+      vsGeo.attributes.position.needsUpdate = true;
+
+      // Update Transformer Flux & Secondary Voltage Arrows
+      fluxArrow.setDirection(new THREE.Vector3(0, vp >= 0 ? 1 : -1, 0));
+      fluxArrow.setLength(Math.max(0.25, Math.min(2.6, Math.abs(vp) * 0.025)), 0.4, 0.24);
+
+      vsArrow.setDirection(new THREE.Vector3(0, vs >= 0 ? 1 : -1, 0));
+      vsArrow.setLength(Math.max(0.25, Math.min(3.2, Math.abs(vs) * 0.025)), 0.4, 0.24);
+
+      bulbMat.emissiveIntensity = Math.min(3.0, 0.1 + pInst * 0.0025);
+
+      fluxValEl.textContent = `${flux.toFixed(2)} Wb`;
+      vpValEl.textContent = `${vp.toFixed(1)} V`;
+      vsValEl.textContent = `${vs.toFixed(1)} V`;
+      ratioValEl.textContent = ratio.toFixed(2);
+      currValEl.textContent = `${ipRms.toFixed(2)} A / ${isRms.toFixed(2)} A`;
+      powValEl.textContent = `${pInst.toFixed(1)} W`;
+
+      if (ratio > 1.02) {
+        txBadge.textContent = `Step-Up Transformer (N_s/N_p = ${ratio.toFixed(2)} > 1)`;
+        txBadge.className = 'badge badge-up';
+      } else if (ratio < 0.98) {
+        txBadge.textContent = `Step-Down Transformer (N_s/N_p = ${ratio.toFixed(2)} < 1)`;
+        txBadge.className = 'badge badge-down';
+      } else {
+        txBadge.textContent = '1:1 Isolation Transformer (N_s = N_p)';
+        txBadge.className = 'badge badge-up';
+      }
+
+      controls.update();
+      renderer.render(scene, camera);
+
+      const now = performance.now();
+      if (now - lastTeleTime >= 1000) {
+        const fps = Math.round((frameCount * 1000) / (now - lastTeleTime));
+        window.parent.postMessage({
+          type: 'physicraft_telemetry',
+          fps,
+          hasNaN: Number.isNaN(vp) || Number.isNaN(vs),
+          errors: runtimeErrors,
+          energyBounded: true
+        }, '*');
+        frameCount = 0;
+        lastTeleTime = now;
+      }
+    }
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    animate();
+  </script>
+</body>
+</html>

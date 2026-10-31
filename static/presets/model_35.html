@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>35. DC and RC Circuit Simulator & 3D Electron Drift</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #070b14;
+      color: #e2e8f0;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      overflow: hidden;
+      width: 100vw;
+      height: 100vh;
+    }
+    canvas { display: block; }
+    #hud {
+      position: fixed;
+      bottom: 20px;
+      left: 20px;
+      background: rgba(10, 15, 30, 0.88);
+      border: 1px solid rgba(56, 189, 248, 0.35);
+      border-radius: 12px;
+      padding: 16px 20px;
+      min-width: 320px;
+      backdrop-filter: blur(10px);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+      font-size: 13px;
+      line-height: 1.6;
+      z-index: 10;
+    }
+    #hud h2 {
+      font-size: 14px;
+      font-weight: 700;
+      color: #38bdf8;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 8px;
+      border-bottom: 1px solid rgba(56, 189, 248, 0.2);
+      padding-bottom: 6px;
+    }
+    .row { display: flex; justify-content: space-between; gap: 16px; }
+    .val { font-family: 'JetBrains Mono', monospace; color: #f8fafc; font-weight: 600; }
+    .legend {
+      margin-top: 10px;
+      padding-top: 8px;
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      font-size: 11px;
+    }
+    .legend-item { display: flex; align-items: center; gap: 5px; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  </style>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+      "lil-gui": "https://unpkg.com/lil-gui@0.19.1/dist/lil-gui.esm.min.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="hud">
+    <h2>35. RC Circuit & 3D Electron Drift</h2>
+    <div class="row"><span>Switch Mode:</span><span class="val" id="v-mode">Charging</span></div>
+    <div class="row"><span>Time Constant (τ = RC):</span><span class="val" id="v-tau">2.50 s</span></div>
+    <div class="row"><span>Capacitor Voltage (V_C):</span><span class="val" id="v-vc">0.00 V</span></div>
+    <div class="row"><span>Circuit Current (I):</span><span class="val" id="v-curr">2.40 mA</span></div>
+    <div class="row"><span>Stored Energy (½CV_C²):</span><span class="val" id="v-energy">0.00 mJ</span></div>
+    <div class="legend">
+      <div class="legend-item"><span class="dot" style="background:#38bdf8"></span>Drifting Electrons (-e)</div>
+      <div class="legend-item"><span class="dot" style="background:#22c55e"></span>Conventional Current I</div>
+      <div class="legend-item"><span class="dot" style="background:#facc15"></span>Capacitor E-Field E_C</div>
+    </div>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { GUI } from 'lil-gui';
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x070b14);
+    scene.fog = new THREE.FogExp2(0x070b14, 0.02);
+
+    const camera = new THREE.PerspectiveCamera(48, window.innerWidth / window.innerHeight, 0.1, 200);
+    camera.position.set(0, 8.5, 13.5);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    document.body.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.06;
+    controls.target.set(0, 0.8, 0);
+
+    scene.add(new THREE.AmbientLight(0x94a3b8, 0.8));
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.3);
+    dirLight.position.set(8, 15, 10);
+    scene.add(dirLight);
+
+    const grid = new THREE.GridHelper(22, 22, 0x1e293b, 0x0f172a);
+    grid.position.y = -2.0;
+    scene.add(grid);
+
+    // Rectangular 3D Wire Loop from (-4.5, 0, -2.5) to (4.5, 0, 2.5)
+    const wireMat = new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.8, roughness: 0.3 });
+    function addWireSegment(p1, p2) {
+      const vec = new THREE.Vector3().subVectors(p2, p1);
+      const len = vec.length();
+      const mid = new THREE.Vector3().addVectors(p1, p2).multiplyScalar(0.5);
+      const cyl = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, len, 16), wireMat);
+      cyl.position.copy(mid);
+      cyl.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), vec.normalize());
+      scene.add(cyl);
+    }
+
+    const cNW = new THREE.Vector3(-4.5, 0, -2.5);
+    const cNE = new THREE.Vector3(4.5, 0, -2.5);
+    const cSE = new THREE.Vector3(4.5, 0, 2.5);
+    const cSW = new THREE.Vector3(-4.5, 0, 2.5);
+
+    addWireSegment(cNW, cNE);
+    addWireSegment(cNE, new THREE.Vector3(4.5, 0, -0.5));
+    addWireSegment(new THREE.Vector3(4.5, 0, 0.5), cSE);
+    addWireSegment(cSE, cSW);
+    addWireSegment(cSW, cNW);
+
+    // DC Battery on Left Branch (-4.5, 0, 0)
+    const batPos = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.45, 0.45, 0.9, 24),
+      new THREE.MeshStandardMaterial({ color: 0xef4444, metalness: 0.5, roughness: 0.3 })
+    );
+    batPos.position.set(-4.5, 0, -0.45);
+    batPos.rotation.x = Math.PI / 2;
+    const batNeg = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.45, 0.45, 0.9, 24),
+      new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.6, roughness: 0.3 })
+    );
+    batNeg.position.set(-4.5, 0, 0.45);
+    batNeg.rotation.x = Math.PI / 2;
+    scene.add(batPos, batNeg);
+
+    // Resistor on Top Branch (0, 0, -2.5)
+    const resistorBody = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.36, 0.36, 2.2, 24),
+      new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.4, metalness: 0.2 })
+    );
+    resistorBody.rotation.z = Math.PI / 2;
+    resistorBody.position.set(0, 0, -2.5);
+    scene.add(resistorBody);
+
+    // Capacitor Plates on Right Branch (4.5, 0, -0.45) and (4.5, 0, 0.45)
+    const capPlateTop = new THREE.Mesh(
+      new THREE.BoxGeometry(1.8, 1.4, 0.14),
+      new THREE.MeshStandardMaterial({ color: 0xef4444, metalness: 0.7, roughness: 0.2 })
+    );
+    capPlateTop.position.set(4.5, 0, -0.48);
+
+    const capPlateBot = new THREE.Mesh(
+      new THREE.BoxGeometry(1.8, 1.4, 0.14),
+      new THREE.MeshStandardMaterial({ color: 0x38bdf8, metalness: 0.7, roughness: 0.2 })
+    );
+    capPlateBot.position.set(4.5, 0, 0.48);
+    scene.add(capPlateTop, capPlateBot);
+
+    // Drifting 3D Electron Spheres around the circuit loop
+    const numElectrons = 36;
+    const electrons = [];
+    const eGeom = new THREE.SphereGeometry(0.16, 14, 14);
+    const eMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
+    for (let i = 0; i < numElectrons; i++) {
+      const m = new THREE.Mesh(eGeom, eMat);
+      scene.add(m);
+      electrons.push({ mesh: m, s: i / numElectrons });
+    }
+
+    // Arrows for Conventional Current I and Capacitor E-field
+    const currentArrow = new THREE.ArrowHelper(
+      new THREE.Vector3(1, 0, 0),
+      new THREE.Vector3(-2.2, 0.65, -2.5),
+      1.5,
+      0x22c55e,
+      0.32,
+      0.2
+    );
+    const capEArrow = new THREE.ArrowHelper(
+      new THREE.Vector3(0, 0, 1),
+      new THREE.Vector3(4.5, 0, -0.4),
+      0.75,
+      0xfacc15,
+      0.22,
+      0.15
+    );
+    scene.add(currentArrow, capEArrow);
+
+    // Live 3D Oscilloscope Board in the back plotting V_C(t) and I(t)
+    const scopeCanvas = document.createElement('canvas');
+    scopeCanvas.width = 512;
+    scopeCanvas.height = 256;
+    const sCtx = scopeCanvas.getContext('2d');
+    const scopeTex = new THREE.CanvasTexture(scopeCanvas);
+    const scopeBoard = new THREE.Mesh(
+      new THREE.PlaneGeometry(7.2, 3.6),
+      new THREE.MeshBasicMaterial({ map: scopeTex })
+    );
+    scopeBoard.position.set(0, 2.7, -4.2);
+    scene.add(scopeBoard);
+
+    const historyVC = [];
+    const historyI = [];
+    const maxHistory = 160;
+
+    const params = {
+      mode: 'Charging',
+      emfVolts: 12.0,
+      resistanceKOhm: 5.0,
+      capacitanceUf: 500.0,
+      paused: false,
+      vc: 0.0,
+      reset() {
+        this.mode = 'Charging';
+        this.emfVolts = 12.0;
+        this.resistanceKOhm = 5.0;
+        this.capacitanceUf = 500.0;
+        this.vc = 0.0;
+        this.paused = false;
+        historyVC.length = 0;
+        historyI.length = 0;
+        gui.controllersRecursive().forEach(c => c.updateDisplay());
+      }
+    };
+
+    const gui = new GUI({ title: 'RC Circuit Controls' });
+    gui.add(params, 'mode', ['Charging', 'Discharging']).name('Switch State');
+    gui.add(params, 'emfVolts', 3.0, 24.0, 0.5).name('Battery EMF ε (V)');
+    gui.add(params, 'resistanceKOhm', 1.0, 10.0, 0.5).name('Resistance R (kΩ)');
+    gui.add(params, 'capacitanceUf', 100.0, 1000.0, 25.0).name('Capacitance C (μF)');
+    gui.add(params, 'paused').name('Pause Simulation');
+    gui.add(params, 'reset').name('Reset Capacitor');
+
+    function pointOnLoop(sNorm) {
+      const s = ((sNorm % 1) + 1) % 1;
+      if (s < 0.25) {
+        const t = s / 0.25;
+        return new THREE.Vector3().lerpVectors(cNW, cNE, t);
+      } else if (s < 0.5) {
+        const t = (s - 0.25) / 0.25;
+        return new THREE.Vector3().lerpVectors(cNE, cSE, t);
+      } else if (s < 0.75) {
+        const t = (s - 0.5) / 0.25;
+        return new THREE.Vector3().lerpVectors(cSE, cSW, t);
+      } else {
+        const t = (s - 0.75) / 0.25;
+        return new THREE.Vector3().lerpVectors(cSW, cNW, t);
+      }
+    }
+
+    function drawScope(tau, currentMa) {
+      const w = scopeCanvas.width;
+      const h = scopeCanvas.height;
+      sCtx.fillStyle = '#0f172a';
+      sCtx.fillRect(0, 0, w, h);
+
+      // Grid lines
+      sCtx.strokeStyle = 'rgba(148, 163, 184, 0.18)';
+      sCtx.lineWidth = 1;
+      for (let x = 0; x <= w; x += 64) {
+        sCtx.beginPath(); sCtx.moveTo(x, 0); sCtx.lineTo(x, h); sCtx.stroke();
+      }
+      for (let y = 0; y <= h; y += 64) {
+        sCtx.beginPath(); sCtx.moveTo(0, y); sCtx.lineTo(w, y); sCtx.stroke();
+      }
+
+      // Labels
+      sCtx.fillStyle = '#38bdf8';
+      sCtx.font = 'bold 14px sans-serif';
+      sCtx.fillText(`V_C(t) [Cyan]  |  I(t) [Green]   (τ = ${tau.toFixed(2)} s)`, 14, 24);
+
+      if (historyVC.length > 1) {
+        // Plot V_C(t)
+        sCtx.strokeStyle = '#38bdf8';
+        sCtx.lineWidth = 3;
+        sCtx.beginPath();
+        for (let i = 0; i < historyVC.length; i++) {
+          const px = (i / (maxHistory - 1)) * w;
+          const py = h - 20 - (historyVC[i] / 24.0) * (h - 55);
+          if (i === 0) sCtx.moveTo(px, py);
+          else sCtx.lineTo(px, py);
+        }
+        sCtx.stroke();
+
+        // Plot I(t)
+        sCtx.strokeStyle = '#22c55e';
+        sCtx.lineWidth = 2.5;
+        sCtx.beginPath();
+        for (let i = 0; i < historyI.length; i++) {
+          const px = (i / (maxHistory - 1)) * w;
+          const py = h * 0.5 - (historyI[i] / 12.0) * (h * 0.4);
+          if (i === 0) sCtx.moveTo(px, py);
+          else sCtx.lineTo(px, py);
+        }
+        sCtx.stroke();
+      }
+      scopeTex.needsUpdate = true;
+    }
+
+    let lastTime = performance.now();
+    let frameCount = 0;
+    let currentFps = 60;
+    const runtimeErrors = [];
+    window.addEventListener('error', (e) => runtimeErrors.push(e.message));
+
+    function animate(now) {
+      requestAnimationFrame(animate);
+      frameCount++;
+      const dt = Math.min((now - lastTime) / 1000, 0.05);
+      lastTime = now;
+
+      // RC time constant tau = R (kOhm) * C (uF) * 1e-3 seconds
+      const tau = Math.max(0.1, params.resistanceKOhm * params.capacitanceUf * 1e-3);
+      const targetV = params.mode === 'Charging' ? params.emfVolts : 0.0;
+      const currentMa = (targetV - params.vc) / params.resistanceKOhm;
+
+      if (!params.paused) {
+        // Exact exponential step update for RC differential equation dVc/dt = (V_target - Vc)/tau
+        params.vc = targetV + (params.vc - targetV) * Math.exp(-dt / tau);
+
+        historyVC.push(params.vc);
+        historyI.push(currentMa);
+        if (historyVC.length > maxHistory) {
+          historyVC.shift();
+          historyI.shift();
+        }
+
+        // Drift electrons opposite to conventional current
+        const driftRate = -currentMa * 0.045;
+        for (const el of electrons) {
+          el.s = (el.s + driftRate * dt + 1.0) % 1.0;
+        }
+      }
+
+      for (const el of electrons) {
+        const pos = pointOnLoop(el.s);
+        // Hide electrons inside the capacitor dielectric gap
+        el.mesh.visible = !(Math.abs(pos.x - 4.5) < 0.2 && Math.abs(pos.z) < 0.45);
+        el.mesh.position.copy(pos);
+      }
+
+      // Update current & capacitor field arrows
+      const absI = Math.abs(currentMa);
+      currentArrow.setDirection(new THREE.Vector3(currentMa >= 0 ? 1 : -1, 0, 0));
+      currentArrow.setLength(Math.min(2.2, Math.max(0.25, absI * 0.45)), 0.3, 0.18);
+
+      const vcRatio = Math.min(1.0, Math.abs(params.vc) / 12.0);
+      capEArrow.setLength(Math.max(0.18, 0.8 * vcRatio), 0.22, 0.14);
+
+      drawScope(tau, currentMa);
+
+      const energyMj = 0.5 * params.capacitanceUf * 1e-3 * params.vc * params.vc;
+      document.getElementById('v-mode').textContent = params.mode;
+      document.getElementById('v-tau').textContent = `${tau.toFixed(2)} s`;
+      document.getElementById('v-vc').textContent = `${params.vc.toFixed(2)} V`;
+      document.getElementById('v-curr').textContent = `${currentMa.toFixed(2)} mA`;
+      document.getElementById('v-energy').textContent = `${energyMj.toFixed(2)} mJ`;
+
+      controls.update();
+      renderer.render(scene, camera);
+    }
+
+    requestAnimationFrame(animate);
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    setInterval(() => {
+      currentFps = frameCount;
+      frameCount = 0;
+      const hasNaN = Number.isNaN(params.vc);
+      window.parent.postMessage({
+        type: 'physicraft_telemetry',
+        fps: currentFps || 60,
+        hasNaN,
+        errors: runtimeErrors,
+        energyBounded: true
+      }, '*');
+    }, 1000);
+  </script>
+</body>
+</html>

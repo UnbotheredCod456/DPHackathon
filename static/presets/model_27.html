@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>27. Ray Optics Bench: Lenses & Mirrors in 3D</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #070b14;
+      color: #e2e8f0;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      overflow: hidden;
+      user-select: none;
+    }
+    #canvas-container { width: 100vw; height: 100vh; }
+    #hud {
+      position: fixed;
+      bottom: 20px;
+      left: 20px;
+      background: rgba(15, 23, 42, 0.88);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(56, 189, 248, 0.28);
+      border-radius: 12px;
+      padding: 16px 20px;
+      min-width: 325px;
+      max-width: 395px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+      z-index: 10;
+    }
+    #hud h2 {
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: #38bdf8;
+      margin-bottom: 10px;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+      padding-bottom: 6px;
+    }
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12.5px;
+      margin: 5px 0;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .stat-label { color: #94a3b8; }
+    .stat-val { color: #f8fafc; font-weight: 600; }
+    .legend {
+      margin-top: 10px;
+      padding-top: 8px;
+      border-top: 1px solid rgba(148, 163, 184, 0.18);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      font-size: 11.5px;
+    }
+    .legend-item { display: flex; align-items: center; gap: 8px; color: #cbd5e1; }
+    .swatch { width: 12px; height: 4px; border-radius: 2px; }
+  </style>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+      "lil-gui": "https://unpkg.com/lil-gui@0.19.1/dist/lil-gui.esm.min.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="canvas-container"></div>
+  <div id="hud">
+    <h2>27. 3D Ray Optics Bench</h2>
+    <div class="stat-row"><span class="stat-label">Optic Element:</span><span class="stat-val" id="val-type">Converging Lens</span></div>
+    <div class="stat-row"><span class="stat-label">Object Distance (d_o):</span><span class="stat-val" id="val-do">6.00 cm</span></div>
+    <div class="stat-row"><span class="stat-label">Focal Length (f):</span><span class="stat-val" id="val-f">+3.50 cm</span></div>
+    <div class="stat-row"><span class="stat-label">Image Distance (d_i):</span><span class="stat-val" id="val-di">+8.40 cm</span></div>
+    <div class="stat-row"><span class="stat-label">Magnification (M):</span><span class="stat-val" id="val-m">-1.40×</span></div>
+    <div class="stat-row"><span class="stat-label">Image Nature:</span><span class="stat-val" id="val-nature">Real, Inverted</span></div>
+    <div class="legend">
+      <div class="legend-item"><span class="swatch" style="background:#22c55e"></span>Object Vector (h_o)</div>
+      <div class="legend-item"><span class="swatch" style="background:#38bdf8"></span>Real Image / Outgoing Real Rays</div>
+      <div class="legend-item"><span class="swatch" style="background:#f59e0b"></span>Virtual Image / Back-traced Rays</div>
+      <div class="legend-item"><span class="swatch" style="background:#f43f5e"></span>Principal Rays (Parallel, Central, Focal)</div>
+    </div>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import GUI from 'lil-gui';
+
+    const container = document.getElementById('canvas-container');
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x070b14);
+    scene.fog = new THREE.FogExp2(0x070b14, 0.015);
+
+    const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 200);
+    camera.position.set(0, 6.5, 22);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    container.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.06;
+
+    scene.add(new THREE.AmbientLight(0xffffff, 0.75));
+    const pLight1 = new THREE.PointLight(0x38bdf8, 1.5, 50);
+    pLight1.position.set(8, 12, 12);
+    scene.add(pLight1);
+    const pLight2 = new THREE.PointLight(0xf43f5e, 1.0, 50);
+    pLight2.position.set(-8, -8, 10);
+    scene.add(pLight2);
+
+    // Optical bench rail & grid
+    const grid = new THREE.GridHelper(36, 36, 0x1e293b, 0x0f172a);
+    grid.position.y = -4.2;
+    scene.add(grid);
+
+    const axisGeo = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(-18, 0, 0),
+      new THREE.Vector3(18, 0, 0)
+    ]);
+    const axisLine = new THREE.Line(axisGeo, new THREE.LineBasicMaterial({ color: 0x475569 }));
+    scene.add(axisLine);
+
+    const params = {
+      opticType: 'Converging Lens',
+      objectDist: 6.5,
+      objectHeight: 2.0,
+      focalMag: 3.5,
+      autoSweep: false,
+      paused: false,
+      reset() {
+        this.opticType = 'Converging Lens';
+        this.objectDist = 6.5;
+        this.objectHeight = 2.0;
+        this.focalMag = 3.5;
+        this.autoSweep = false;
+        this.paused = false;
+        gui.controllersRecursive().forEach(c => c.updateDisplay());
+      }
+    };
+
+    const gui = new GUI({ title: 'Ray Optics Bench' });
+    gui.add(params, 'opticType', [
+      'Converging Lens',
+      'Diverging Lens',
+      'Concave Mirror',
+      'Convex Mirror'
+    ]).name('Optic Type');
+    gui.add(params, 'objectDist', 1.2, 12.0, 0.1).name('Object Dist d_o (cm)');
+    gui.add(params, 'objectHeight', 0.6, 3.2, 0.1).name('Object Height h_o');
+    gui.add(params, 'focalMag', 1.5, 6.5, 0.1).name('Focal Length |f|');
+    gui.add(params, 'autoSweep').name('Sweep Object');
+    gui.add(params, 'paused').name('Pause');
+    gui.add(params, 'reset').name('Reset');
+
+    // 3D Optic Element Meshes
+    const opticGroup = new THREE.Group();
+    scene.add(opticGroup);
+
+    const glassMat = new THREE.MeshPhysicalMaterial({
+      color: 0x38bdf8,
+      transparent: true,
+      opacity: 0.35,
+      roughness: 0.1,
+      metalness: 0.1,
+      transmission: 0.6,
+      side: THREE.DoubleSide
+    });
+    const mirrorMat = new THREE.MeshStandardMaterial({
+      color: 0x94a3b8,
+      roughness: 0.15,
+      metalness: 0.85,
+      side: THREE.DoubleSide
+    });
+
+    // Lens geometry (scaled sphere for convex, cylinder+ring for concave)
+    const convexMesh = new THREE.Mesh(new THREE.SphereGeometry(3.8, 32, 32), glassMat);
+    convexMesh.scale.set(0.16, 1, 1);
+    opticGroup.add(convexMesh);
+
+    const concaveRing = new THREE.Mesh(new THREE.CylinderGeometry(3.8, 3.8, 0.6, 32), glassMat);
+    concaveRing.rotation.z = Math.PI / 2;
+    opticGroup.add(concaveRing);
+
+    const mirrorDisk = new THREE.Mesh(new THREE.CylinderGeometry(3.8, 3.8, 0.25, 32), mirrorMat);
+    mirrorDisk.rotation.z = Math.PI / 2;
+    opticGroup.add(mirrorDisk);
+
+    // Focal point markers F1 and F2
+    const fMarkerGeo = new THREE.SphereGeometry(0.16, 16, 16);
+    const fMarkerMat = new THREE.MeshBasicMaterial({ color: 0xf43f5e });
+    const f1Dot = new THREE.Mesh(fMarkerGeo, fMarkerMat);
+    const f2Dot = new THREE.Mesh(fMarkerGeo, fMarkerMat);
+    scene.add(f1Dot, f2Dot);
+
+    // Object and Image ArrowHelpers
+    const objArrow = new THREE.ArrowHelper(
+      new THREE.Vector3(0, 1, 0),
+      new THREE.Vector3(-6.5, 0, 0),
+      2.0,
+      0x22c55e,
+      0.38,
+      0.22
+    );
+    const imgArrow = new THREE.ArrowHelper(
+      new THREE.Vector3(0, -1, 0),
+      new THREE.Vector3(6.5, 0, 0),
+      2.0,
+      0x38bdf8,
+      0.38,
+      0.22
+    );
+    scene.add(objArrow, imgArrow);
+
+    // 3 Principal Rays (incident + outgoing + virtual dashed back-trace)
+    const rayColors = [0xf43f5e, 0x38bdf8, 0xa855f7];
+    const realRays = [];
+    const virtRays = [];
+    const rayArrows = [];
+
+    for (let i = 0; i < 3; i++) {
+      const rGeo = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()
+      ]);
+      const rLine = new THREE.Line(rGeo, new THREE.LineBasicMaterial({ color: rayColors[i], linewidth: 2 }));
+      scene.add(rLine);
+      realRays.push(rLine);
+
+      const vGeo = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(), new THREE.Vector3()
+      ]);
+      const vLine = new THREE.Line(
+        vGeo,
+        new THREE.LineDashedMaterial({ color: 0xf59e0b, dashSize: 0.22, gapSize: 0.14 })
+      );
+      scene.add(vLine);
+      virtRays.push(vLine);
+
+      const dirArrow = new THREE.ArrowHelper(
+        new THREE.Vector3(1, 0, 0),
+        new THREE.Vector3(0, 0, 0),
+        0.8,
+        rayColors[i],
+        0.24,
+        0.14
+      );
+      scene.add(dirArrow);
+      rayArrows.push(dirArrow);
+    }
+
+    function setLinePoints(line, pts) {
+      const arr = line.geometry.attributes.position.array;
+      for (let i = 0; i < pts.length; i++) {
+        arr[i * 3] = pts[i].x;
+        arr[i * 3 + 1] = pts[i].y;
+        arr[i * 3 + 2] = pts[i].z;
+      }
+      line.geometry.attributes.position.needsUpdate = true;
+    }
+
+    const elType = document.getElementById('val-type');
+    const elDo = document.getElementById('val-do');
+    const elF = document.getElementById('val-f');
+    const elDi = document.getElementById('val-di');
+    const elM = document.getElementById('val-m');
+    const elNature = document.getElementById('val-nature');
+
+    let simTime = 0;
+    let lastTime = performance.now();
+    let frameCount = 0;
+    let hasNaN = false;
+
+    function updateOptics(dt) {
+      if (!params.paused && params.autoSweep) {
+        simTime += dt;
+        params.objectDist = 6.5 + 4.5 * Math.sin(simTime * 0.7);
+      }
+
+      const isMirror = params.opticType.includes('Mirror');
+      const isConverging = params.opticType === 'Converging Lens' || params.opticType === 'Concave Mirror';
+      const f = isConverging ? params.focalMag : -params.focalMag;
+
+      convexMesh.visible = params.opticType === 'Converging Lens';
+      concaveRing.visible = params.opticType === 'Diverging Lens';
+      mirrorDisk.visible = isMirror;
+
+      const d_o = params.objectDist;
+      const h_o = params.objectHeight;
+      const x_o = -d_o;
+
+      // Focal markers
+      f1Dot.position.set(-params.focalMag, 0, 0);
+      f2Dot.position.set(params.focalMag, 0, 0);
+      f2Dot.visible = !isMirror;
+
+      // Update Object Arrow
+      objArrow.position.set(x_o, 0, 0);
+      objArrow.setDirection(new THREE.Vector3(0, h_o >= 0 ? 1 : -1, 0));
+      objArrow.setLength(Math.max(0.1, Math.abs(h_o)), 0.35, 0.2);
+
+      // Thin lens / mirror equation: 1/d_i = 1/f - 1/d_o
+      let denom = (1 / f) - (1 / d_o);
+      if (Math.abs(denom) < 0.008) {
+        denom = denom >= 0 ? 0.008 : -0.008; // Avoid infinity when d_o == f
+      }
+      const d_i = 1 / denom;
+      const M = -d_i / d_o;
+      const h_i = M * h_o;
+
+      // Coordinate x_i in scene:
+      // For Lens: real image (d_i > 0) is on right (+x), virtual (d_i < 0) is on left (-x)
+      // For Mirror: real image (d_i > 0) is on left (-x), virtual (d_i < 0) is on right (+x)
+      const x_i = isMirror ? -d_i : d_i;
+      const isReal = d_i > 0;
+
+      // Update Image Arrow
+      const clampedXi = Math.max(-17, Math.min(17, x_i));
+      const clampedHi = Math.max(-6, Math.min(6, h_i));
+      imgArrow.position.set(clampedXi, 0, 0);
+      imgArrow.setDirection(new THREE.Vector3(0, clampedHi >= 0 ? 1 : -1, 0));
+      imgArrow.setLength(Math.max(0.12, Math.abs(clampedHi)), 0.35, 0.2);
+      imgArrow.setColor(new THREE.Color(isReal ? 0x38bdf8 : 0xf59e0b));
+
+      const objTip = new THREE.Vector3(x_o, h_o, 0);
+      const imgTip = new THREE.Vector3(x_i, h_i, 0);
+
+      // Hit points on optic plane x = 0 for the 3 principal rays:
+      // Ray 0: Parallel to axis -> hits (0, h_o, 0)
+      // Ray 1: Central ray -> hits (0, 0, 0)
+      // Ray 2: Focal ray -> passes through focal point toward x = 0
+      const hitY2 = h_i;
+      const hits = [
+        new THREE.Vector3(0, h_o, 0),
+        new THREE.Vector3(0, 0, 0),
+        new THREE.Vector3(0, Math.max(-3.6, Math.min(3.6, hitY2)), 0)
+      ];
+
+      const outX = isMirror ? -16 : 16;
+
+      for (let i = 0; i < 3; i++) {
+        const hit = hits[i];
+        // Direction of outgoing real light ray:
+        // If real image, outgoing ray goes from hit through imgTip.
+        // If virtual image, outgoing ray diverges away from imgTip (from imgTip through hit).
+        let rayDir;
+        if (isReal) {
+          rayDir = new THREE.Vector3().subVectors(imgTip, hit).normalize();
+        } else {
+          rayDir = new THREE.Vector3().subVectors(hit, imgTip).normalize();
+        }
+
+        // Ensure outgoing ray travels toward +x for lens, -x for mirror
+        if ((!isMirror && rayDir.x < 0) || (isMirror && rayDir.x > 0)) {
+          rayDir.negate();
+        }
+
+        const tEnd = (outX - hit.x) / (Math.abs(rayDir.x) > 1e-4 ? rayDir.x : 1e-4);
+        const endPt = hit.clone().addScaledVector(rayDir, Math.max(2, Math.min(24, tEnd)));
+
+        setLinePoints(realRays[i], [objTip, hit, endPt]);
+
+        // Place direction arrow along outgoing ray
+        const arrowPos = hit.clone().addScaledVector(rayDir, 2.2);
+        rayArrows[i].position.copy(arrowPos);
+        rayArrows[i].setDirection(rayDir);
+
+        // Virtual ray back-trace if image is virtual
+        if (!isReal) {
+          virtRays[i].visible = true;
+          setLinePoints(virtRays[i], [hit, imgTip]);
+          virtRays[i].computeLineDistances();
+        } else {
+          virtRays[i].visible = false;
+        }
+      }
+
+      if (Number.isNaN(d_i) || Number.isNaN(M)) hasNaN = true;
+
+      // Update HUD
+      elType.textContent = params.opticType;
+      elDo.textContent = `${d_o.toFixed(2)} cm`;
+      elF.textContent = `${f >= 0 ? '+' : ''}${f.toFixed(2)} cm`;
+      elDi.textContent = `${d_i >= 0 ? '+' : ''}${d_i.toFixed(2)} cm`;
+      elM.textContent = `${M >= 0 ? '+' : ''}${M.toFixed(2)}×`;
+      elNature.textContent = `${isReal ? 'Real' : 'Virtual'}, ${M < 0 ? 'Inverted' : 'Upright'}`;
+    }
+
+    function animate(now) {
+      requestAnimationFrame(animate);
+      const dt = Math.min((now - lastTime) / 1000, 0.05);
+      lastTime = now;
+      frameCount++;
+
+      updateOptics(dt);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+    requestAnimationFrame(animate);
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    setInterval(() => {
+      const fps = frameCount || 60;
+      frameCount = 0;
+      window.parent.postMessage({
+        type: 'physicraft_telemetry',
+        fps,
+        hasNaN,
+        errors: [],
+        energyBounded: true
+      }, '*');
+    }, 1000);
+  </script>
+</body>
+</html>

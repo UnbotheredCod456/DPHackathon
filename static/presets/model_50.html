@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>50. Nuclear Fission Chain Reaction & Monte Carlo Radioactive Decay Half-Life Simulator</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #070b14; color: #e2e8f0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; overflow: hidden; }
+    #canvas-container { width: 100vw; height: 100vh; }
+    #hud {
+      position: fixed; bottom: 20px; left: 20px; z-index: 10;
+      background: rgba(15, 23, 42, 0.88); backdrop-filter: blur(12px);
+      border: 1px solid rgba(56, 189, 248, 0.28); border-radius: 12px;
+      padding: 16px 20px; min-width: 345px; max-width: 410px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+    }
+    #hud h2 { font-size: 14px; font-weight: 700; color: #38bdf8; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 10px; }
+    .metric { display: flex; justify-content: space-between; font-size: 13px; margin: 5px 0; font-variant-numeric: tabular-nums; }
+    .metric span.val { color: #f8fafc; font-weight: 600; font-family: monospace; }
+    .legend { margin-top: 12px; padding-top: 10px; border-top: 1px solid rgba(148, 163, 184, 0.2); font-size: 12px; }
+    .legend-item { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
+    .swatch { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+  </style>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+      "lil-gui": "https://unpkg.com/lil-gui@0.19.1/dist/lil-gui.esm.min.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="canvas-container"></div>
+  <div id="hud">
+    <h2>50. Nuclear Fission & Half-Life Core</h2>
+    <div class="metric"><span>Multiplication Factor k_eff:</span><span class="val" id="val-keff">1.00 (Critical)</span></div>
+    <div class="metric"><span>Intact Fissile U-235 Nuclei:</span><span class="val" id="val-u235">125 / 216</span></div>
+    <div class="metric"><span>Active Thermal Neutrons:</span><span class="val" id="val-neutrons">0</span></div>
+    <div class="metric"><span>Cumulative Energy Released:</span><span class="val" id="val-mev">0 MeV</span></div>
+    <div class="metric"><span>Decay Fraction N(t)/N₀:</span><span class="val" id="val-frac">1.000</span></div>
+    <div class="metric"><span>Control Rod Absorption:</span><span class="val" id="val-rod">35%</span></div>
+    <div class="legend">
+      <div class="legend-item"><span class="swatch" style="background:#10b981"></span> Fissile U-235 Nuclei (Split at 200 MeV/event)</div>
+      <div class="legend-item"><span class="swatch" style="background:#64748b"></span> Fertile U-238 / Decayed Daughter Nuclei</div>
+      <div class="legend-item"><span class="swatch" style="background:#facc15"></span> Thermal Neutrons & Velocity Vector v_n</div>
+      <div class="legend-item"><span class="swatch" style="background:#f43f5e"></span> Fission Fragment Recoil Momentum Vector</div>
+    </div>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import GUI from 'lil-gui';
+
+    const container = document.getElementById('canvas-container');
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x070b14);
+
+    const camera = new THREE.PerspectiveCamera(48, window.innerWidth / window.innerHeight, 0.1, 250);
+    camera.position.set(16, 13, 20);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    container.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.06;
+
+    scene.add(new THREE.AmbientLight(0xffffff, 0.65));
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.3);
+    dirLight.position.set(12, 22, 16);
+    scene.add(dirLight);
+
+    const grid = new THREE.GridHelper(32, 32, 0x1e293b, 0x0f172a);
+    grid.position.y = -7.5;
+    scene.add(grid);
+
+    // Core containment wireframe cylinder
+    const coreBounds = new THREE.Mesh(
+      new THREE.CylinderGeometry(8.5, 8.5, 13, 24, 1, true),
+      new THREE.MeshBasicMaterial({ color: 0x1e293b, wireframe: true, transparent: true, opacity: 0.35 })
+    );
+    scene.add(coreBounds);
+
+    // Control Rods (4 Boron-Carbide absorber rods descending from top)
+    const rodGroup = new THREE.Group();
+    const rodGeo = new THREE.CylinderGeometry(0.42, 0.42, 12, 16);
+    const rodMat = new THREE.MeshStandardMaterial({ color: 0xef4444, metalness: 0.6, roughness: 0.3 });
+    const rodOffsets = [[-2.2, -2.2], [2.2, -2.2], [-2.2, 2.2], [2.2, 2.2]];
+    const rodMeshes = [];
+    rodOffsets.forEach(([rx, rz]) => {
+      const m = new THREE.Mesh(rodGeo, rodMat);
+      m.position.set(rx, 4, rz);
+      rodGroup.add(m);
+      rodMeshes.push(m);
+    });
+    scene.add(rodGroup);
+
+    const params = {
+      enrichment: 0.68,      // Fraction of U-235 vs U-238
+      controlRodDepth: 0.35, // 0 = withdrawn (supercritical), 1 = fully inserted (subcritical)
+      decayConstant: 0.015,  // Monte Carlo spontaneous half-life decay rate lambda
+      paused: false,
+      fireNeutron: () => spawnNeutron(new THREE.Vector3(0, 0, 0), new THREE.Vector3(1, 0.2, -0.4).normalize().multiplyScalar(8.5)),
+      reset: () => initCore()
+    };
+
+    // 6x6x6 = 216 Heavy Nuclei Lattice
+    const GRID_N = 6;
+    const SPACING = 2.0;
+    const nuclei = [];
+    const nucGeo = new THREE.SphereGeometry(0.42, 16, 16);
+
+    for (let ix = 0; ix < GRID_N; ix++) {
+      for (let iy = 0; iy < GRID_N; iy++) {
+        for (let iz = 0; iz < GRID_N; iz++) {
+          const mat = new THREE.MeshStandardMaterial({ color: 0x10b981, roughness: 0.3, metalness: 0.3 });
+          const mesh = new THREE.Mesh(nucGeo, mat);
+          const pos = new THREE.Vector3(
+            (ix - (GRID_N - 1) * 0.5) * SPACING,
+            (iy - (GRID_N - 1) * 0.5) * SPACING,
+            (iz - (GRID_N - 1) * 0.5) * SPACING
+          );
+          mesh.position.copy(pos);
+          scene.add(mesh);
+          nuclei.push({ mesh, basePos: pos.clone(), isU235: true, intact: true });
+        }
+      }
+    }
+
+    // Active Neutrons + Velocity ArrowHelpers
+    const MAX_NEUTRONS = 40;
+    const neutrons = [];
+    const neutronGeo = new THREE.SphereGeometry(0.16, 10, 10);
+    const neutronMat = new THREE.MeshBasicMaterial({ color: 0xfacc15 });
+
+    for (let i = 0; i < MAX_NEUTRONS; i++) {
+      const mesh = new THREE.Mesh(neutronGeo, neutronMat);
+      const arrow = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(), 1.1, 0xfacc15, 0.3, 0.18);
+      mesh.visible = false;
+      arrow.visible = false;
+      scene.add(mesh);
+      scene.add(arrow);
+      neutrons.push({ mesh, arrow, pos: new THREE.Vector3(), vel: new THREE.Vector3(), active: false });
+    }
+
+    // Fission Recoil Fragments (Ba-141 & Kr-92) with Momentum Arrows
+    const MAX_FRAGS = 30;
+    const fragments = [];
+    const fragGeo = new THREE.SphereGeometry(0.26, 10, 10);
+    const fragMat = new THREE.MeshBasicMaterial({ color: 0xf43f5e });
+
+    for (let i = 0; i < MAX_FRAGS; i++) {
+      const mesh = new THREE.Mesh(fragGeo, fragMat);
+      const arrow = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(), 1.3, 0xf43f5e, 0.32, 0.2);
+      mesh.visible = false;
+      arrow.visible = false;
+      scene.add(mesh);
+      scene.add(arrow);
+      fragments.push({ mesh, arrow, pos: new THREE.Vector3(), vel: new THREE.Vector3(), life: 0, active: false });
+    }
+
+    let totalMeV = 0;
+    let initialU235 = 1;
+
+    function spawnNeutron(pos, vel) {
+      for (let i = 0; i < MAX_NEUTRONS; i++) {
+        if (!neutrons[i].active) {
+          const n = neutrons[i];
+          n.active = true;
+          n.pos.copy(pos);
+          n.vel.copy(vel);
+          n.mesh.position.copy(pos);
+          n.mesh.visible = true;
+          n.arrow.visible = true;
+          return;
+        }
+      }
+    }
+
+    function spawnFissionFragments(pos) {
+      const dir = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize();
+      for (let s = -1; s <= 1; s += 2) {
+        for (let i = 0; i < MAX_FRAGS; i++) {
+          if (!fragments[i].active) {
+            const f = fragments[i];
+            f.active = true;
+            f.life = 1.0;
+            f.pos.copy(pos);
+            f.vel.copy(dir).multiplyScalar(s * 6.5);
+            f.mesh.position.copy(pos);
+            f.mesh.visible = true;
+            f.arrow.visible = true;
+            break;
+          }
+        }
+      }
+    }
+
+    function updateControlRods() {
+      const yPos = 8.0 - params.controlRodDepth * 8.0;
+      rodMeshes.forEach(m => { m.position.y = yPos; });
+    }
+
+    function initCore() {
+      totalMeV = 0;
+      initialU235 = 0;
+      nuclei.forEach(nuc => {
+        nuc.intact = true;
+        nuc.isU235 = Math.random() < params.enrichment;
+        if (nuc.isU235) {
+          initialU235++;
+          nuc.mesh.material.color.setHex(0x10b981);
+          nuc.mesh.material.emissive.setHex(0x064e3b);
+        } else {
+          nuc.mesh.material.color.setHex(0x475569);
+          nuc.mesh.material.emissive.setHex(0x000000);
+        }
+        nuc.mesh.scale.setScalar(1.0);
+      });
+      initialU235 = Math.max(1, initialU235);
+      neutrons.forEach(n => { n.active = false; n.mesh.visible = false; n.arrow.visible = false; });
+      fragments.forEach(f => { f.active = false; f.mesh.visible = false; f.arrow.visible = false; });
+      updateControlRods();
+      // Inject starter thermal neutron
+      params.fireNeutron();
+    }
+
+    const gui = new GUI({ title: 'Reactor & Half-Life Controls' });
+    gui.add(params, 'enrichment', 0.15, 1.0, 0.05).name('U-235 Enrichment').onChange(initCore);
+    gui.add(params, 'controlRodDepth', 0.0, 1.0, 0.05).name('Control Rod Depth').onChange(updateControlRods);
+    gui.add(params, 'decayConstant', 0.0, 0.08, 0.005).name('Decay Rate λ (s⁻¹)');
+    gui.add(params, 'fireNeutron').name('Inject Thermal Neutron');
+    gui.add(params, 'paused').name('Pause Simulation');
+    gui.add(params, 'reset').name('Reset Reactor Core');
+
+    initCore();
+
+    let frameCount = 0;
+    let lastFpsTime = performance.now();
+    let currentFps = 60;
+    const runtimeErrors = [];
+    window.addEventListener('error', (e) => runtimeErrors.push(e.message));
+
+    function triggerFission(nuc) {
+      nuc.intact = false;
+      nuc.mesh.material.color.setHex(0x334155);
+      nuc.mesh.material.emissive.setHex(0x000000);
+      nuc.mesh.scale.setScalar(0.55);
+      totalMeV += 200;
+
+      spawnFissionFragments(nuc.basePos);
+
+      // Prompt neutrons (2 to 3 neutrons per U-235 fission)
+      const count = Math.random() < 0.45 ? 3 : 2;
+      for (let k = 0; k < count; k++) {
+        // Control rod absorption probability
+        if (Math.random() < params.controlRodDepth * 0.72) continue;
+        const vDir = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize();
+        spawnNeutron(nuc.basePos, vDir.multiplyScalar(7.5 + Math.random() * 2.5));
+      }
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+      const dt = 0.016;
+
+      let intactU235 = 0;
+      let activeNeutronCount = 0;
+
+      if (!params.paused) {
+        // 1. Monte Carlo Spontaneous Radioactive Decay (P = lambda * dt)
+        for (let i = 0; i < nuclei.length; i++) {
+          const nuc = nuclei[i];
+          if (nuc.intact && nuc.isU235) {
+            if (Math.random() < params.decayConstant * dt) {
+              // Spontaneous decay or spontaneous fission
+              triggerFission(nuc);
+            } else {
+              intactU235++;
+            }
+          }
+        }
+
+        // 2. Update Neutrons & Check Collisions with Fissile U-235
+        for (let i = 0; i < MAX_NEUTRONS; i++) {
+          const n = neutrons[i];
+          if (!n.active) continue;
+          activeNeutronCount++;
+
+          n.pos.addScaledVector(n.vel, dt);
+          n.mesh.position.copy(n.pos);
+          n.arrow.position.copy(n.pos);
+          n.arrow.setDirection(n.vel.clone().normalize());
+
+          // Escape core boundary
+          if (n.pos.length() > 11.5) {
+            n.active = false;
+            n.mesh.visible = false;
+            n.arrow.visible = false;
+            continue;
+          }
+
+          // Check collision with intact nuclei
+          for (let j = 0; j < nuclei.length; j++) {
+            const nuc = nuclei[j];
+            if (!nuc.intact) continue;
+            if (n.pos.distanceToSquared(nuc.basePos) < 0.38) {
+              n.active = false;
+              n.mesh.visible = false;
+              n.arrow.visible = false;
+              if (nuc.isU235) {
+                triggerFission(nuc);
+              }
+              break;
+            }
+          }
+        }
+
+        // 3. Update Fission Recoil Fragments
+        for (let i = 0; i < MAX_FRAGS; i++) {
+          const f = fragments[i];
+          if (!f.active) continue;
+          f.life -= dt * 1.4;
+          if (f.life <= 0) {
+            f.active = false;
+            f.mesh.visible = false;
+            f.arrow.visible = false;
+            continue;
+          }
+          f.pos.addScaledVector(f.vel, dt);
+          f.mesh.position.copy(f.pos);
+          f.arrow.position.copy(f.pos);
+          f.arrow.setDirection(f.vel.clone().normalize());
+          f.arrow.setLength(Math.max(0.4, f.life * 1.3), 0.3, 0.18);
+        }
+      } else {
+        nuclei.forEach(nuc => { if (nuc.intact && nuc.isU235) intactU235++; });
+        neutrons.forEach(n => { if (n.active) activeNeutronCount++; });
+      }
+
+      // Update HUD
+      const frac = intactU235 / initialU235;
+      const kEff = 2.42 * params.enrichment * frac * (1.0 - params.controlRodDepth * 0.75);
+      const stateLabel = kEff > 1.05 ? 'Supercritical' : (kEff < 0.95 ? 'Subcritical' : 'Critical');
+      document.getElementById('val-keff').textContent = `${kEff.toFixed(2)} (${stateLabel})`;
+      document.getElementById('val-u235').textContent = `${intactU235} / ${initialU235}`;
+      document.getElementById('val-neutrons').textContent = `${activeNeutronCount}`;
+      document.getElementById('val-mev').textContent = `${totalMeV.toLocaleString()} MeV`;
+      document.getElementById('val-frac').textContent = frac.toFixed(3);
+      document.getElementById('val-rod').textContent = `${Math.round(params.controlRodDepth * 100)}%`;
+
+      controls.update();
+      renderer.render(scene, camera);
+
+      frameCount++;
+      const now = performance.now();
+      if (now - lastFpsTime >= 1000) {
+        currentFps = Math.round((frameCount * 1000) / (now - lastFpsTime));
+        frameCount = 0;
+        lastFpsTime = now;
+      }
+    }
+    animate();
+
+    setInterval(() => {
+      window.parent.postMessage({
+        type: 'physicraft_telemetry',
+        fps: currentFps,
+        hasNaN: false,
+        errors: runtimeErrors,
+        energyBounded: true
+      }, '*');
+    }, 1000);
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>

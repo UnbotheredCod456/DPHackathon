@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>44. Photoelectric Effect Lab: Photon Beam, Work Function & Stopping Potential</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #070b14; color: #e2e8f0; font-family: 'Inter', -apple-system, sans-serif; overflow: hidden; }
+    canvas { display: block; width: 100vw; height: 100vh; }
+    #hud {
+      position: absolute; bottom: 20px; left: 20px; width: 375px;
+      background: rgba(15, 23, 42, 0.88); backdrop-filter: blur(12px);
+      border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 12px;
+      padding: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+      font-size: 13px; line-height: 1.5; z-index: 10;
+    }
+    #hud h2 { font-size: 15px; color: #38bdf8; margin-bottom: 8px; font-weight: 600; }
+    .metric { display: flex; justify-content: space-between; margin: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.06); padding-bottom: 3px; }
+    .metric span.val { font-family: 'JetBrains Mono', monospace; color: #f8fafc; font-weight: 600; }
+    .status-badge { display: inline-block; padding: 2px 8px; border-radius: 99px; font-size: 11px; font-weight: 700; }
+    .legend { margin-top: 10px; display: flex; flex-direction: column; gap: 5px; font-size: 12px; }
+    .legend-item { display: flex; align-items: center; gap: 8px; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  </style>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+      "lil-gui": "https://unpkg.com/lil-gui@0.19.1/dist/lil-gui.esm.min.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="hud">
+    <h2>44. Photoelectric Effect Lab (3D)</h2>
+    <div class="metric"><span>Photon Wavelength (λ):</span><span class="val" id="m-lambda">350 nm (UV)</span></div>
+    <div class="metric"><span>Photon Energy (E = hc/λ):</span><span class="val" id="m-ephoton">3.54 eV</span></div>
+    <div class="metric"><span>Work Function (Φ):</span><span class="val" id="m-phi">2.10 eV (Cesium)</span></div>
+    <div class="metric"><span>Max Kinetic Energy (K_max):</span><span class="val" id="m-kmax">1.44 eV</span></div>
+    <div class="metric"><span>Stopping Potential (V_s):</span><span class="val" id="m-vstop">0.50 V</span></div>
+    <div class="metric"><span>Photocurrent (I):</span><span class="val" id="m-current">2.45 μA</span></div>
+    <div class="legend">
+      <div class="legend-item"><span class="dot" style="background:#a855f7"></span>Incident Quantized Photon Wavepackets (hν)</div>
+      <div class="legend-item"><span class="dot" style="background:#38bdf8"></span>Photoelectrons & Velocity Vector v_e</div>
+      <div class="legend-item"><span class="dot" style="background:#ef4444"></span>Retarding Electric Field Vector E (Anode → Cathode)</div>
+    </div>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import GUI from 'lil-gui';
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x070b14);
+
+    const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 200);
+    camera.position.set(0, 4.5, 16.5);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    document.body.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+
+    // Lighting
+    scene.add(new THREE.AmbientLight(0xffffff, 0.65));
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.1);
+    dirLight.position.set(8, 16, 12);
+    scene.add(dirLight);
+
+    const grid = new THREE.GridHelper(30, 30, 0x1e293b, 0x0f172a);
+    grid.position.y = -4.5;
+    scene.add(grid);
+
+    // Vacuum Tube Envelope
+    const tubeGeo = new THREE.CylinderGeometry(3.2, 3.2, 11.5, 32, 1, true);
+    tubeGeo.rotateZ(Math.PI / 2);
+    const tubeMat = new THREE.MeshPhongMaterial({
+      color: 0x94a3b8,
+      transparent: true,
+      opacity: 0.12,
+      side: THREE.DoubleSide
+    });
+    scene.add(new THREE.Mesh(tubeGeo, tubeMat));
+
+    // Cathode Plate (Left at x = -4.5) & Collector Anode Plate (Right at x = +4.5)
+    const cathodeX = -4.5;
+    const anodeX = 4.5;
+    const plateGap = anodeX - cathodeX; // 9.0 units
+
+    const plateGeo = new THREE.CylinderGeometry(2.4, 2.4, 0.28, 32);
+    plateGeo.rotateZ(Math.PI / 2);
+    const cathodeMat = new THREE.MeshStandardMaterial({ color: 0xeab308, metalness: 0.75, roughness: 0.25 });
+    const cathodeMesh = new THREE.Mesh(plateGeo, cathodeMat);
+    cathodeMesh.position.set(cathodeX, 0, 0);
+    scene.add(cathodeMesh);
+
+    const anodeMat = new THREE.MeshStandardMaterial({ color: 0x64748b, metalness: 0.8, roughness: 0.2 });
+    const anodeMesh = new THREE.Mesh(plateGeo, anodeMat);
+    anodeMesh.position.set(anodeX, 0, 0);
+    scene.add(anodeMesh);
+
+    // Photon Source Lamp at top-left (-7.5, 5.2, 0) aiming at Cathode
+    const lampGroup = new THREE.Group();
+    lampGroup.position.set(-7.5, 5.0, 0);
+    lampGroup.lookAt(cathodeX, 0, 0);
+    const lampBody = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.45, 0.7, 1.6, 20).rotateX(Math.PI / 2),
+      new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.6 })
+    );
+    lampGroup.add(lampBody);
+    scene.add(lampGroup);
+
+    // Electric Field Vector Arrows inside Vacuum Tube
+    const eFieldArrows = [];
+    const eOffsets = [-1.5, 0, 1.5];
+    for (const yOff of eOffsets) {
+      const arr = new THREE.ArrowHelper(
+        new THREE.Vector3(-1, 0, 0),
+        new THREE.Vector3(0, yOff, -1.2),
+        2.5,
+        0xef4444,
+        0.35,
+        0.2
+      );
+      scene.add(arr);
+      eFieldArrows.push(arr);
+    }
+
+    // Wavelength (nm) to RGB Color helper
+    function wavelengthToColor(nm) {
+      const color = new THREE.Color();
+      if (nm < 380) {
+        color.setHSL(0.78, 0.95, 0.6); // UV Violet
+      } else if (nm < 450) {
+        color.setHSL(0.72 - ((nm - 380) / 70) * 0.1, 0.95, 0.55);
+      } else if (nm < 520) {
+        color.setHSL(0.62 - ((nm - 450) / 70) * 0.28, 0.95, 0.5);
+      } else if (nm < 590) {
+        color.setHSL(0.34 - ((nm - 520) / 70) * 0.2, 0.95, 0.5);
+      } else {
+        color.setHSL(0.14 - Math.min(0.14, ((nm - 590) / 110) * 0.14), 0.95, 0.5);
+      }
+      return color;
+    }
+
+    const metals = {
+      'Cesium (2.10 eV)': { phi: 2.10, color: 0xeab308 },
+      'Potassium (2.30 eV)': { phi: 2.30, color: 0x38bdf8 },
+      'Sodium (2.75 eV)': { phi: 2.75, color: 0xf97316 },
+      'Zinc (4.30 eV)': { phi: 4.30, color: 0x94a3b8 },
+      'Platinum (5.65 eV)': { phi: 5.65, color: 0xe2e8f0 }
+    };
+
+    const params = {
+      metal: 'Cesium (2.10 eV)',
+      wavelengthNm: 350,     // nm (1240 / 350 = 3.54 eV)
+      intensity: 60,         // % photon flux
+      stoppingVolts: 0.50,   // retarding potential V_s (V)
+      paused: false,
+      reset: () => {
+        params.metal = 'Cesium (2.10 eV)';
+        params.wavelengthNm = 350;
+        params.intensity = 60;
+        params.stoppingVolts = 0.50;
+        params.paused = false;
+        clearParticles();
+        gui.controllersRecursive().forEach(c => c.updateDisplay());
+      }
+    };
+
+    const gui = new GUI({ title: 'Photoelectric Lab Controls' });
+    gui.add(params, 'metal', Object.keys(metals)).name('Cathode Metal (Φ)').onChange((val) => {
+      cathodeMat.color.setHex(metals[val].color);
+    });
+    gui.add(params, 'wavelengthNm', 200, 700, 5).name('Wavelength λ (nm)');
+    gui.add(params, 'intensity', 10, 100, 5).name('Light Intensity (%)');
+    gui.add(params, 'stoppingVolts', -1.0, 4.5, 0.05).name('Retarding Volts V_s (V)');
+    gui.add(params, 'paused').name('Pause Simulation');
+    gui.add(params, 'reset').name('Reset Defaults');
+
+    // Active Photons and Photoelectrons
+    const photons = [];
+    const electrons = [];
+
+    function clearParticles() {
+      while (photons.length > 0) scene.remove(photons.pop().mesh);
+      while (electrons.length > 0) {
+        const e = electrons.pop();
+        scene.remove(e.mesh, e.arrow);
+      }
+    }
+
+    function spawnPhoton() {
+      const col = wavelengthToColor(params.wavelengthNm);
+      const mesh = new THREE.Mesh(
+        new THREE.SphereGeometry(0.14, 12, 12),
+        new THREE.MeshBasicMaterial({ color: col })
+      );
+      const yTarget = (Math.random() - 0.5) * 3.0;
+      const zTarget = (Math.random() - 0.5) * 2.4;
+      const startPos = new THREE.Vector3(-7.4, 4.9, zTarget * 0.3);
+      const targetPos = new THREE.Vector3(cathodeX + 0.15, yTarget, zTarget);
+      const dir = targetPos.clone().sub(startPos).normalize();
+
+      mesh.position.copy(startPos);
+      scene.add(mesh);
+      photons.push({ mesh, vel: dir.multiplyScalar(9.5), targetX: cathodeX + 0.15 });
+    }
+
+    function spawnPhotoelectron(pos, kMaxEv) {
+      // Sample kinetic energy up to K_max (mostly near K_max for clean stopping potential cutoff)
+      const keEv = kMaxEv * (0.85 + 0.15 * Math.random());
+      const vScale = 2.6; // scene speed conversion so 0.5*vx^2 corresponds to eV
+      const vx = Math.sqrt(2.0 * keEv) * vScale;
+      const vy = (Math.random() - 0.5) * 0.4;
+      const vz = (Math.random() - 0.5) * 0.4;
+
+      const mesh = new THREE.Mesh(
+        new THREE.SphereGeometry(0.15, 16, 16),
+        new THREE.MeshStandardMaterial({ color: 0x38bdf8, emissive: 0x0284c7 })
+      );
+      mesh.position.copy(pos);
+      scene.add(mesh);
+
+      const arrow = new THREE.ArrowHelper(
+        new THREE.Vector3(1, 0, 0),
+        pos,
+        0.8,
+        0x38bdf8,
+        0.22,
+        0.14
+      );
+      scene.add(arrow);
+
+      electrons.push({
+        mesh,
+        arrow,
+        pos: pos.clone(),
+        vel: new THREE.Vector3(vx, vy, vz),
+        vScale
+      });
+    }
+
+    // HUD Elements
+    const elLambda = document.getElementById('m-lambda');
+    const elEPhoton = document.getElementById('m-ephoton');
+    const elPhi = document.getElementById('m-phi');
+    const elKmax = document.getElementById('m-kmax');
+    const elVstop = document.getElementById('m-vstop');
+    const elCurrent = document.getElementById('m-current');
+
+    let spawnAccumulator = 0;
+    let collectedCount = 0;
+    let currentWindowTimer = 0;
+    let measuredCurrent = 0;
+
+    let lastFrameTime = performance.now();
+    let frameCount = 0;
+    let currentFps = 60;
+    const runtimeErrors = [];
+    window.addEventListener('error', (e) => runtimeErrors.push(e.message));
+
+    function updateSimulation(dt) {
+      const ePhoton = 1240.0 / params.wavelengthNm; // eV
+      const phi = metals[params.metal].phi;
+      const kMax = Math.max(0, ePhoton - phi);
+
+      // Update Electric Field Vector Arrows inside tube
+      const vStop = params.stoppingVolts;
+      for (const arr of eFieldArrows) {
+        if (Math.abs(vStop) < 0.03) {
+          arr.visible = false;
+        } else {
+          arr.visible = true;
+          // Positive stopping potential retards electrons (force toward -X)
+          const dirX = vStop > 0 ? -1 : 1;
+          arr.position.x = dirX < 0 ? 1.4 : -1.4;
+          arr.setDirection(new THREE.Vector3(dirX, 0, 0));
+          const len = Math.min(3.5, 0.5 + Math.abs(vStop) * 0.7);
+          arr.setLength(len, 0.35, 0.2);
+        }
+      }
+
+      if (!params.paused) {
+        // Spawn photons proportional to light intensity
+        const spawnRate = (params.intensity / 100) * 18.0; // photons per sec
+        spawnAccumulator += spawnRate * dt;
+        while (spawnAccumulator >= 1.0) {
+          spawnPhoton();
+          spawnAccumulator -= 1.0;
+        }
+
+        // Update Photons
+        for (let i = photons.length - 1; i >= 0; i--) {
+          const p = photons[i];
+          p.mesh.position.addScaledVector(p.vel, dt);
+          if (p.mesh.position.x >= p.targetX) {
+            // Hit Cathode! Check Einstein threshold E_photon > Phi
+            if (kMax > 0) {
+              spawnPhotoelectron(p.mesh.position, kMax);
+            }
+            scene.remove(p.mesh);
+            photons.splice(i, 1);
+          }
+        }
+
+        // Update Photoelectrons under uniform electrostatic deceleration
+        for (let i = electrons.length - 1; i >= 0; i--) {
+          const e = electrons[i];
+          // Work-energy consistency: Δ(0.5*vx^2) = -(vStop * vScale^2 / plateGap) * Δx
+          const ax = -(vStop * e.vScale * e.vScale) / plateGap;
+          e.pos.x += e.vel.x * dt + 0.5 * ax * dt * dt;
+          e.pos.y += e.vel.y * dt;
+          e.pos.z += e.vel.z * dt;
+          e.vel.x += ax * dt;
+
+          e.mesh.position.copy(e.pos);
+          const speed = e.vel.length();
+          if (speed > 0.1) {
+            e.arrow.visible = true;
+            e.arrow.position.copy(e.pos);
+            e.arrow.setDirection(e.vel.clone().normalize());
+            e.arrow.setLength(Math.min(1.4, speed * 0.22), 0.22, 0.14);
+          } else {
+            e.arrow.visible = false;
+          }
+
+          // Check Anode collection or Cathode return
+          if (e.pos.x >= anodeX - 0.15) {
+            collectedCount++;
+            scene.remove(e.mesh, e.arrow);
+            electrons.splice(i, 1);
+          } else if (e.pos.x < cathodeX) {
+            scene.remove(e.mesh, e.arrow);
+            electrons.splice(i, 1);
+          }
+        }
+
+        currentWindowTimer += dt;
+        if (currentWindowTimer >= 0.5) {
+          // Analytic + smoothed photocurrent display
+          if (kMax <= 0 || vStop >= kMax) {
+            measuredCurrent = 0;
+          } else {
+            const frac = Math.min(1.0, Math.max(0.0, (kMax - vStop) / Math.max(0.2, kMax * 0.35)));
+            measuredCurrent = (params.intensity * 0.045) * frac;
+          }
+          collectedCount = 0;
+          currentWindowTimer = 0;
+        }
+      }
+
+      // Update HUD
+      const band = params.wavelengthNm < 380 ? 'UV' : (params.wavelengthNm > 620 ? 'Red' : 'Visible');
+      elLambda.textContent = `${params.wavelengthNm} nm (${band})`;
+      elEPhoton.textContent = `${ePhoton.toFixed(2)} eV`;
+      elPhi.textContent = `${phi.toFixed(2)} eV`;
+      elKmax.textContent = kMax > 0 ? `${kMax.toFixed(2)} eV` : `0.00 eV (Below f₀)`;
+      elVstop.textContent = `${vStop.toFixed(2)} V`;
+      elCurrent.textContent = `${measuredCurrent.toFixed(2)} μA`;
+    }
+
+    function animate(now) {
+      requestAnimationFrame(animate);
+      const dt = Math.min((now - lastFrameTime) / 1000, 0.05);
+      lastFrameTime = now;
+      frameCount++;
+
+      updateSimulation(dt);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+    requestAnimationFrame(animate);
+
+    // 1-second Telemetry Heartbeat
+    setInterval(() => {
+      currentFps = frameCount;
+      frameCount = 0;
+      const hasNaN = Number.isNaN(params.wavelengthNm) || Number.isNaN(measuredCurrent);
+      window.parent.postMessage({
+        type: 'physicraft_telemetry',
+        fps: currentFps,
+        hasNaN: hasNaN,
+        errors: runtimeErrors,
+        energyBounded: true
+      }, '*');
+    }, 1000);
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>

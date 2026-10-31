@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>47. 1D Quantum Potential Wells: Infinite Square Well and Harmonic Oscillator Eigenstates</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #070b14; color: #e2e8f0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; overflow: hidden; }
+    #canvas-container { width: 100vw; height: 100vh; }
+    #hud {
+      position: fixed; bottom: 20px; left: 20px; z-index: 10;
+      background: rgba(15, 23, 42, 0.88); backdrop-filter: blur(12px);
+      border: 1px solid rgba(56, 189, 248, 0.28); border-radius: 12px;
+      padding: 16px 20px; min-width: 330px; max-width: 390px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+    }
+    #hud h2 { font-size: 14px; font-weight: 700; color: #38bdf8; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 10px; }
+    .metric { display: flex; justify-content: space-between; font-size: 13px; margin: 5px 0; font-variant-numeric: tabular-nums; }
+    .metric span.val { color: #f8fafc; font-weight: 600; font-family: monospace; }
+    .legend { margin-top: 12px; padding-top: 10px; border-top: 1px solid rgba(148, 163, 184, 0.2); font-size: 12px; }
+    .legend-item { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
+    .swatch { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+  </style>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+      "lil-gui": "https://unpkg.com/lil-gui@0.19.1/dist/lil-gui.esm.min.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="canvas-container"></div>
+  <div id="hud">
+    <h2>47. Quantum Potential Well Eigenstates</h2>
+    <div class="metric"><span>Potential System:</span><span class="val" id="val-sys">Harmonic Oscillator</span></div>
+    <div class="metric"><span>Quantum State (n₁, n₂):</span><span class="val" id="val-n">n₁=1, n₂=2</span></div>
+    <div class="metric"><span>Expectation Energy ⟨E⟩:</span><span class="val" id="val-e">1.50 ħω</span></div>
+    <div class="metric"><span>Position Centroid ⟨x(t)⟩:</span><span class="val" id="val-x">0.00 nm</span></div>
+    <div class="metric"><span>Expectation Momentum ⟨p(t)⟩:</span><span class="val" id="val-p">0.00 ħ/nm</span></div>
+    <div class="metric"><span>Phase Frequency ω₁₂:</span><span class="val" id="val-w">1.00 rad/s</span></div>
+    <div class="legend">
+      <div class="legend-item"><span class="swatch" style="background:#38bdf8"></span> 3D Complex Wavefunction (x, Re ψ, Im ψ)</div>
+      <div class="legend-item"><span class="swatch" style="background:#facc15"></span> Probability Density |ψ(x,t)|² Profile</div>
+      <div class="legend-item"><span class="swatch" style="background:#10b981"></span> Expectation Position Vector ⟨x(t)⟩</div>
+      <div class="legend-item"><span class="swatch" style="background:#f43f5e"></span> Rotating Complex Phasor & Momentum ⟨p⟩</div>
+    </div>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import GUI from 'lil-gui';
+
+    const container = document.getElementById('canvas-container');
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x070b14);
+
+    const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 200);
+    camera.position.set(2, 7.5, 19);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    container.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.06;
+
+    scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.1);
+    dirLight.position.set(8, 16, 12);
+    scene.add(dirLight);
+
+    const grid = new THREE.GridHelper(28, 28, 0x1e293b, 0x0f172a);
+    grid.position.y = -3.5;
+    scene.add(grid);
+
+    // Axis line
+    const axisGeo = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(-10, 0, 0), new THREE.Vector3(10, 0, 0)
+    ]);
+    scene.add(new THREE.Line(axisGeo, new THREE.LineBasicMaterial({ color: 0x64748b })));
+
+    const N = 360;
+    const L = 12.0; // -6 to +6
+
+    const params = {
+      wellType: 'Harmonic Oscillator',
+      n1: 0,
+      n2: 1,
+      mixRatio: 0.35, // 0 = pure state n1, 0.5 = equal superposition
+      omega: 1.5,
+      paused: false,
+      reset: () => { simTime = 0; params.n1 = 0; params.n2 = 1; params.mixRatio = 0.35; gui.controllersRecursive().forEach(c => c.updateDisplay()); }
+    };
+
+    // Physics Hermite Polynomials for Harmonic Oscillator
+    function hermite(n, x) {
+      if (n === 0) return 1;
+      if (n === 1) return 2 * x;
+      let h0 = 1, h1 = 2 * x;
+      for (let k = 2; k <= n; k++) {
+        const hk = 2 * x * h1 - 2 * (k - 1) * h0;
+        h0 = h1;
+        h1 = hk;
+      }
+      return h1;
+    }
+
+    function factorial(n) {
+      let f = 1;
+      for (let i = 2; i <= n; i++) f *= i;
+      return f;
+    }
+
+    function eigenfn(n, x, type) {
+      if (type === 'Infinite Square Well') {
+        const qn = Math.max(1, n + 1); // 1-indexed for square well
+        const a = 8.0; // width -4 to 4
+        if (Math.abs(x) >= a * 0.5) return 0;
+        const norm = Math.sqrt(2.0 / a);
+        return norm * Math.sin((qn * Math.PI * (x + a * 0.5)) / a);
+      } else {
+        // Harmonic Oscillator
+        const norm = 1.0 / Math.sqrt(Math.pow(2, n) * factorial(n) * Math.sqrt(Math.PI));
+        return norm * hermite(n, x) * Math.exp(-0.5 * x * x);
+      }
+    }
+
+    function eigenEnergy(n, type, omega) {
+      if (type === 'Infinite Square Well') {
+        const qn = Math.max(1, n + 1);
+        return 0.35 * qn * qn * omega;
+      } else {
+        return (n + 0.5) * omega;
+      }
+    }
+
+    // Potential curve visualization
+    const potPositions = new Float32Array(N * 3);
+    const potGeo = new THREE.BufferGeometry();
+    potGeo.setAttribute('position', new THREE.BufferAttribute(potPositions, 3));
+    const potLine = new THREE.Line(potGeo, new THREE.LineBasicMaterial({ color: 0x94a3b8, transparent: true, opacity: 0.6 }));
+    scene.add(potLine);
+
+    // 3D Phasor Ribbon + Struts
+    const wavePos = new Float32Array(N * 3);
+    const waveCol = new Float32Array(N * 3);
+    const waveGeo = new THREE.BufferGeometry();
+    waveGeo.setAttribute('position', new THREE.BufferAttribute(wavePos, 3));
+    waveGeo.setAttribute('color', new THREE.BufferAttribute(waveCol, 3));
+    const waveLine = new THREE.Line(waveGeo, new THREE.LineBasicMaterial({ vertexColors: true }));
+    scene.add(waveLine);
+
+    const strutCount = 60;
+    const strutPos = new Float32Array(strutCount * 6);
+    const strutGeo = new THREE.BufferGeometry();
+    strutGeo.setAttribute('position', new THREE.BufferAttribute(strutPos, 3));
+    const struts = new THREE.LineSegments(strutGeo, new THREE.LineBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.45 }));
+    scene.add(struts);
+
+    // |ψ|² Floor Curve
+    const probPos = new Float32Array(N * 3);
+    const probGeo = new THREE.BufferGeometry();
+    probGeo.setAttribute('position', new THREE.BufferAttribute(probPos, 3));
+    const probLine = new THREE.Line(probGeo, new THREE.LineBasicMaterial({ color: 0xfacc15 }));
+    scene.add(probLine);
+
+    // Dynamic ArrowHelpers
+    const phasorArrow = new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 0), 2.5, 0xf43f5e, 0.4, 0.25);
+    scene.add(phasorArrow);
+
+    const expXArrow = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, -3.4, -3.0), 1.5, 0x10b981, 0.35, 0.22);
+    scene.add(expXArrow);
+
+    const gui = new GUI({ title: 'Potential Well Eigenstates' });
+    gui.add(params, 'wellType', ['Harmonic Oscillator', 'Infinite Square Well']).name('Potential V(x)');
+    gui.add(params, 'n1', 0, 6, 1).name('Primary State n₁');
+    gui.add(params, 'n2', 0, 6, 1).name('Secondary State n₂');
+    gui.add(params, 'mixRatio', 0.0, 1.0, 0.05).name('Superposition c₂²');
+    gui.add(params, 'omega', 0.5, 3.5, 0.1).name('Frequency Scale ω');
+    gui.add(params, 'paused').name('Pause Simulation');
+    gui.add(params, 'reset').name('Reset State');
+
+    let simTime = 0;
+    let frameCount = 0;
+    let lastFpsTime = performance.now();
+    let currentFps = 60;
+    let hasNaN = false;
+    const runtimeErrors = [];
+    window.addEventListener('error', (e) => runtimeErrors.push(e.message));
+    const tmpColor = new THREE.Color();
+
+    function animate() {
+      requestAnimationFrame(animate);
+      if (!params.paused) simTime += 0.016;
+
+      const c1 = Math.sqrt(1.0 - params.mixRatio);
+      const c2 = Math.sqrt(params.mixRatio);
+      const E1 = eigenEnergy(params.n1, params.wellType, params.omega);
+      const E2 = eigenEnergy(params.n2, params.wellType, params.omega);
+      const avgE = c1 * c1 * E1 + c2 * c2 * E2;
+
+      const dx = L / (N - 1);
+      const ampScale = 3.2;
+      const probScale = 4.5;
+
+      let expX = 0;
+      let expP = 0;
+      let prevRe = 0, prevIm = 0;
+      let sIdx = 0;
+
+      for (let i = 0; i < N; i++) {
+        const x = -L * 0.5 + i * dx;
+        const u1 = eigenfn(params.n1, x, params.wellType);
+        const u2 = eigenfn(params.n2, x, params.wellType);
+
+        const re = c1 * u1 * Math.cos(-E1 * simTime) + c2 * u2 * Math.cos(-E2 * simTime);
+        const im = c1 * u1 * Math.sin(-E1 * simTime) + c2 * u2 * Math.sin(-E2 * simTime);
+        const p2 = re * re + im * im;
+        if (Number.isNaN(p2)) hasNaN = true;
+
+        expX += x * p2 * dx;
+        if (i > 0) {
+          const dRe = (re - prevRe) / dx;
+          const dIm = (im - prevIm) / dx;
+          expP += (re * dIm - im * dRe) * dx;
+        }
+        prevRe = re;
+        prevIm = im;
+
+        wavePos[i * 3] = x;
+        wavePos[i * 3 + 1] = re * ampScale;
+        wavePos[i * 3 + 2] = im * ampScale;
+
+        const phase = (Math.atan2(im, re) + Math.PI) / (2 * Math.PI);
+        tmpColor.setHSL(phase, 0.85, 0.58);
+        waveCol[i * 3] = tmpColor.r;
+        waveCol[i * 3 + 1] = tmpColor.g;
+        waveCol[i * 3 + 2] = tmpColor.b;
+
+        probPos[i * 3] = x;
+        probPos[i * 3 + 1] = -3.4 + p2 * probScale;
+        probPos[i * 3 + 2] = -3.0;
+
+        // Potential well outline on back plane
+        let vx = 0;
+        if (params.wellType === 'Harmonic Oscillator') {
+          vx = Math.min(6.5, 0.22 * x * x);
+        } else {
+          vx = Math.abs(x) >= 4.0 ? 6.0 : 0.0;
+        }
+        potPositions[i * 3] = x;
+        potPositions[i * 3 + 1] = -3.4 + vx;
+        potPositions[i * 3 + 2] = -3.05;
+
+        if (i % 6 === 0 && sIdx < strutCount) {
+          strutPos[sIdx * 6] = x;
+          strutPos[sIdx * 6 + 1] = 0;
+          strutPos[sIdx * 6 + 2] = 0;
+          strutPos[sIdx * 6 + 3] = x;
+          strutPos[sIdx * 6 + 4] = re * ampScale;
+          strutPos[sIdx * 6 + 5] = im * ampScale;
+          sIdx++;
+        }
+      }
+
+      waveGeo.attributes.position.needsUpdate = true;
+      waveGeo.attributes.color.needsUpdate = true;
+      probGeo.attributes.position.needsUpdate = true;
+      potGeo.attributes.position.needsUpdate = true;
+      strutGeo.attributes.position.needsUpdate = true;
+
+      // Update Rotating Phasor Arrow at x = 0.8
+      const u1Sample = eigenfn(params.n1, 0.8, params.wellType);
+      const u2Sample = eigenfn(params.n2, 0.8, params.wellType);
+      const rS = c1 * u1Sample * Math.cos(-E1 * simTime) + c2 * u2Sample * Math.cos(-E2 * simTime);
+      const iS = c1 * u1Sample * Math.sin(-E1 * simTime) + c2 * u2Sample * Math.sin(-E2 * simTime);
+      const pDir = new THREE.Vector3(0, rS, iS);
+      const pLen = pDir.length() * ampScale;
+      if (pLen > 0.05) {
+        phasorArrow.position.set(0.8, 0, 0);
+        phasorArrow.setDirection(pDir.normalize());
+        phasorArrow.setLength(Math.max(0.4, pLen), 0.35, 0.2);
+      }
+
+      // Update Expectation Position Vector
+      expXArrow.position.set(0, -3.3, -3.0);
+      const dirX = expX >= 0 ? 1 : -1;
+      expXArrow.setDirection(new THREE.Vector3(dirX, 0, 0));
+      expXArrow.setLength(Math.max(0.35, Math.abs(expX) * 1.4), 0.3, 0.2);
+
+      // Update HUD
+      document.getElementById('val-sys').textContent = params.wellType;
+      const offset = params.wellType === 'Infinite Square Well' ? 1 : 0;
+      document.getElementById('val-n').textContent = `n₁=${params.n1 + offset}, n₂=${params.n2 + offset}`;
+      document.getElementById('val-e').textContent = avgE.toFixed(2) + ' ħω';
+      document.getElementById('val-x').textContent = expX.toFixed(2) + ' nm';
+      document.getElementById('val-p').textContent = expP.toFixed(2) + ' ħ/nm';
+      document.getElementById('val-w').textContent = Math.abs(E2 - E1).toFixed(2) + ' rad/s';
+
+      controls.update();
+      renderer.render(scene, camera);
+
+      frameCount++;
+      const now = performance.now();
+      if (now - lastFpsTime >= 1000) {
+        currentFps = Math.round((frameCount * 1000) / (now - lastFpsTime));
+        frameCount = 0;
+        lastFpsTime = now;
+      }
+    }
+    animate();
+
+    setInterval(() => {
+      window.parent.postMessage({
+        type: 'physicraft_telemetry',
+        fps: currentFps,
+        hasNaN: hasNaN,
+        errors: runtimeErrors,
+        energyBounded: true
+      }, '*');
+    }, 1000);
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>

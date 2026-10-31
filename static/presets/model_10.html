@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Model 10 — Coriolis and Centrifugal Forces on a Rotating Turntable</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #070b14;
+      color: #e2e8f0;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      overflow: hidden;
+      user-select: none;
+    }
+    #canvas-container { width: 100vw; height: 100vh; }
+    #hud {
+      position: fixed;
+      bottom: 20px;
+      left: 20px;
+      background: rgba(10, 16, 30, 0.88);
+      border: 1px solid rgba(56, 189, 248, 0.28);
+      border-radius: 12px;
+      padding: 16px 20px;
+      min-width: 350px;
+      backdrop-filter: blur(12px);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+      z-index: 10;
+    }
+    #hud h2 {
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: #38bdf8;
+      margin-bottom: 10px;
+      border-bottom: 1px solid rgba(56, 189, 248, 0.2);
+      padding-bottom: 6px;
+    }
+    .hud-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12.5px;
+      margin: 5px 0;
+      font-variant-numeric: tabular-nums;
+    }
+    .hud-label { color: #94a3b8; }
+    .hud-val { color: #f8fafc; font-weight: 600; font-family: 'JetBrains Mono', monospace; }
+    .legend {
+      margin-top: 10px;
+      padding-top: 8px;
+      border-top: 1px solid rgba(148, 163, 184, 0.15);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      font-size: 11.5px;
+    }
+    .legend-item { display: flex; align-items: center; gap: 6px; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  </style>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+      "lil-gui": "https://unpkg.com/lil-gui@0.19.1/dist/lil-gui.esm.min.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="canvas-container"></div>
+
+  <div id="hud">
+    <h2>Coriolis &amp; Centrifugal Forces</h2>
+    <div class="hud-row"><span class="hud-label">Turntable Ω:</span><span class="hud-val" id="val-omega">1.20 rad/s</span></div>
+    <div class="hud-row"><span class="hud-label">Rotating Speed |v'|:</span><span class="hud-val" id="val-vrot">0.00 m/s</span></div>
+    <div class="hud-row"><span class="hud-label">Coriolis |−2m(Ω × v')|:</span><span class="hud-val" id="val-fcor">0.00 N</span></div>
+    <div class="hud-row"><span class="hud-label">Centrifugal |−mΩ×(Ω×r)|:</span><span class="hud-val" id="val-fcent">0.00 N</span></div>
+    <div class="hud-row"><span class="hud-label">Jacobi Constant E_J:</span><span class="hud-val" id="val-ej">0.00 J/kg</span></div>
+    <div class="legend">
+      <div class="legend-item"><span class="dot" style="background:#f43f5e"></span>Coriolis Force (F_cor)</div>
+      <div class="legend-item"><span class="dot" style="background:#facc15"></span>Centrifugal (F_cent)</div>
+      <div class="legend-item"><span class="dot" style="background:#22d3ee"></span>Inertial Path</div>
+      <div class="legend-item"><span class="dot" style="background:#a855f7"></span>Turntable Path</div>
+    </div>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import GUI from 'lil-gui';
+
+    const container = document.getElementById('canvas-container');
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x070b14);
+    scene.fog = new THREE.FogExp2(0x070b14, 0.015);
+
+    const camera = new THREE.PerspectiveCamera(46, window.innerWidth / window.innerHeight, 0.1, 200);
+    camera.position.set(0, 14.5, 11.5);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    container.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+
+    scene.add(new THREE.AmbientLight(0x94a3b8, 0.8));
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.4);
+    dirLight.position.set(8, 20, 10);
+    scene.add(dirLight);
+
+    const diskRadius = 6.2;
+    const params = {
+      omega: 1.25,
+      launchSpeed: 4.2,
+      launchAngleDeg: 18,
+      mass: 1.5,
+      coRotateCamera: false,
+      showVectors: true,
+      paused: false,
+      reset: () => launchPuck()
+    };
+
+    // Turntable group
+    const turntable = new THREE.Group();
+    scene.add(turntable);
+
+    // Polar grid texture for turntable
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 512;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#0f172a';
+    ctx.fillRect(0, 0, 512, 512);
+    ctx.strokeStyle = '#1e293b';
+    ctx.lineWidth = 2;
+    for (let r = 40; r <= 250; r += 42) {
+      ctx.beginPath();
+      ctx.arc(256, 256, r, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    for (let a = 0; a < 12; a++) {
+      const ang = (a * Math.PI) / 6;
+      ctx.beginPath();
+      ctx.moveTo(256, 256);
+      ctx.lineTo(256 + 256 * Math.cos(ang), 256 + 256 * Math.sin(ang));
+      ctx.stroke();
+    }
+    const diskTex = new THREE.CanvasTexture(canvas);
+
+    const diskMesh = new THREE.Mesh(
+      new THREE.CylinderGeometry(diskRadius, diskRadius, 0.2, 64),
+      new THREE.MeshStandardMaterial({ map: diskTex, roughness: 0.4, metalness: 0.2 })
+    );
+    diskMesh.position.y = -0.1;
+    turntable.add(diskMesh);
+
+    const rimMesh = new THREE.Mesh(
+      new THREE.TorusGeometry(diskRadius, 0.08, 16, 64),
+      new THREE.MeshBasicMaterial({ color: 0x38bdf8 })
+    );
+    rimMesh.rotation.x = Math.PI / 2;
+    turntable.add(rimMesh);
+
+    // Puck (lives in rotating frame for clean numerical integration of rotating EOM)
+    const puck = new THREE.Mesh(
+      new THREE.SphereGeometry(0.28, 28, 20),
+      new THREE.MeshStandardMaterial({ color: 0xf8fafc, emissive: 0x38bdf8, emissiveIntensity: 0.4 })
+    );
+    puck.position.y = 0.28;
+    turntable.add(puck);
+
+    // Force & velocity arrows inside turntable frame
+    const corArrow = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(), 1.5, 0xf43f5e, 0.35, 0.22);
+    const centArrow = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(), 1.5, 0xfacc15, 0.35, 0.22);
+    const velArrow = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(), 1.5, 0x10b981, 0.32, 0.2);
+    turntable.add(corArrow, centArrow, velArrow);
+
+    // Rotating trajectory line (child of turntable)
+    const maxPts = 450;
+    const rotTrailArr = new Float32Array(maxPts * 3);
+    const rotTrailGeo = new THREE.BufferGeometry();
+    rotTrailGeo.setAttribute('position', new THREE.BufferAttribute(rotTrailArr, 3));
+    const rotTrailLine = new THREE.Line(
+      rotTrailGeo,
+      new THREE.LineBasicMaterial({ color: 0xa855f7, linewidth: 2 })
+    );
+    turntable.add(rotTrailLine);
+
+    // Inertial trajectory line (child of scene)
+    const inTrailArr = new Float32Array(maxPts * 3);
+    const inTrailGeo = new THREE.BufferGeometry();
+    inTrailGeo.setAttribute('position', new THREE.BufferAttribute(inTrailArr, 3));
+    const inTrailLine = new THREE.Line(
+      inTrailGeo,
+      new THREE.LineBasicMaterial({ color: 0x22d3ee, linewidth: 2 })
+    );
+    scene.add(inTrailLine);
+
+    // State in rotating frame (x, z, vx, vz) where +Y is up, Ω = (0, omega, 0)
+    let state = { x: 0, z: 0, vx: 0, vz: 0, ej0: 0 };
+    let tableAngle = 0;
+    let trailIdx = 0;
+
+    function rotatingAccel(x, z, vx, vz) {
+      const W = params.omega;
+      // Ω = (0, W, 0), r = (x, 0, z), v' = (vx, 0, vz)
+      // Ω × v' = (W*vz, 0, -W*vx) => a_cor = -2(Ω × v') = (-2*W*vz, 0, 2*W*vx)
+      // a_cent = -Ω × (Ω × r) = (W²*x, 0, W²*z)
+      return {
+        ax: -2 * W * vz + W * W * x,
+        az: 2 * W * vx + W * W * z
+      };
+    }
+
+    function jacobiConstant(x, z, vx, vz) {
+      const W = params.omega;
+      return 0.5 * (vx * vx + vz * vz) - 0.5 * W * W * (x * x + z * z);
+    }
+
+    function launchPuck() {
+      const ang = THREE.MathUtils.degToRad(params.launchAngleDeg);
+      state.x = -2.4;
+      state.z = 0.0;
+      state.vx = params.launchSpeed * Math.cos(ang);
+      state.vz = params.launchSpeed * Math.sin(ang);
+      state.ej0 = jacobiConstant(state.x, state.z, state.vx, state.vz);
+      trailIdx = 0;
+      rotTrailGeo.setDrawRange(0, 0);
+      inTrailGeo.setDrawRange(0, 0);
+    }
+
+    function stepRK4(dt) {
+      const rSq = state.x * state.x + state.z * state.z;
+      if (rSq > diskRadius * diskRadius) {
+        launchPuck();
+        return;
+      }
+      const steps = 4;
+      const h = dt / steps;
+      for (let i = 0; i < steps; i++) {
+        const a1 = rotatingAccel(state.x, state.z, state.vx, state.vz);
+        const x2 = state.x + 0.5 * h * state.vx;
+        const z2 = state.z + 0.5 * h * state.vz;
+        const vx2 = state.vx + 0.5 * h * a1.ax;
+        const vz2 = state.vz + 0.5 * h * a1.az;
+        const a2 = rotatingAccel(x2, z2, vx2, vz2);
+
+        const x3 = state.x + 0.5 * h * vx2;
+        const z3 = state.z + 0.5 * h * vz2;
+        const vx3 = state.vx + 0.5 * h * a2.ax;
+        const vz3 = state.vz + 0.5 * h * a2.az;
+        const a3 = rotatingAccel(x3, z3, vx3, vz3);
+
+        const x4 = state.x + h * vx3;
+        const z4 = state.z + h * vz3;
+        const vx4 = state.vx + h * a3.ax;
+        const vz4 = state.vz + h * a3.az;
+        const a4 = rotatingAccel(x4, z4, vx4, vz4);
+
+        state.x += (h / 6) * (state.vx + 2 * vx2 + 2 * vx3 + vx4);
+        state.z += (h / 6) * (state.vz + 2 * vz2 + 2 * vz3 + vz4);
+        state.vx += (h / 6) * (a1.ax + 2 * a2.ax + 2 * a3.ax + a4.ax);
+        state.vz += (h / 6) * (a1.az + 2 * a2.az + 2 * a3.az + a4.az);
+      }
+    }
+
+    const gui = new GUI({ title: 'Rotating Frame Controls' });
+    gui.add(params, 'omega', -2.5, 2.5, 0.05).name('Turntable Ω (rad/s)').onChange(launchPuck);
+    gui.add(params, 'launchSpeed', 1.5, 8.0, 0.1).name('Launch Speed v₀').onChange(launchPuck);
+    gui.add(params, 'launchAngleDeg', -60, 60, 1).name('Launch Angle (°)').onChange(launchPuck);
+    gui.add(params, 'mass', 0.5, 5.0, 0.1).name('Puck Mass m (kg)');
+    gui.add(params, 'coRotateCamera').name('Co-Rotate Camera');
+    gui.add(params, 'showVectors').name('Show Force Arrows');
+    gui.add(params, 'paused').name('Pause');
+    gui.add(params, 'reset').name('↻ Re-Launch Puck');
+
+    launchPuck();
+
+    let frameCount = 0;
+    let lastTelemetry = performance.now();
+    const runtimeErrors = [];
+    window.addEventListener('error', (e) => runtimeErrors.push(e.message));
+
+    let prevTime = performance.now();
+    function animate(now) {
+      requestAnimationFrame(animate);
+      frameCount++;
+      const dt = Math.min(0.03, (now - prevTime) / 1000);
+      prevTime = now;
+
+      if (!params.paused) {
+        stepRK4(dt);
+        tableAngle += params.omega * dt;
+        turntable.rotation.y = tableAngle;
+
+        if (params.coRotateCamera) {
+          const camVec = camera.position.clone();
+          camVec.applyAxisAngle(new THREE.Vector3(0, 1, 0), params.omega * dt);
+          camera.position.copy(camVec);
+        }
+
+        puck.position.set(state.x, 0.28, state.z);
+        const worldPos = puck.getWorldPosition(new THREE.Vector3());
+
+        if (trailIdx < maxPts) {
+          rotTrailArr[trailIdx * 3] = state.x;
+          rotTrailArr[trailIdx * 3 + 1] = 0.06;
+          rotTrailArr[trailIdx * 3 + 2] = state.z;
+          inTrailArr[trailIdx * 3] = worldPos.x;
+          inTrailArr[trailIdx * 3 + 1] = 0.12;
+          inTrailArr[trailIdx * 3 + 2] = worldPos.z;
+          trailIdx++;
+          rotTrailGeo.attributes.position.needsUpdate = true;
+          inTrailGeo.attributes.position.needsUpdate = true;
+          rotTrailGeo.setDrawRange(0, trailIdx);
+          inTrailGeo.setDrawRange(0, trailIdx);
+        }
+      }
+
+      // Compute pseudoforce vectors in rotating frame
+      const W = params.omega;
+      const fCor = new THREE.Vector3(-2 * params.mass * W * state.vz, 0, 2 * params.mass * W * state.vx);
+      const fCent = new THREE.Vector3(params.mass * W * W * state.x, 0, params.mass * W * W * state.z);
+      const vRot = new THREE.Vector3(state.vx, 0, state.vz);
+
+      corArrow.position.copy(puck.position);
+      centArrow.position.copy(puck.position);
+      velArrow.position.copy(puck.position);
+
+      corArrow.visible = params.showVectors && fCor.length() > 0.02;
+      centArrow.visible = params.showVectors && fCent.length() > 0.02;
+      velArrow.visible = params.showVectors && vRot.length() > 0.02;
+
+      if (corArrow.visible) {
+        corArrow.setDirection(fCor.clone().normalize());
+        corArrow.setLength(Math.min(2.8, fCor.length() * 0.12), 0.34, 0.2);
+      }
+      if (centArrow.visible) {
+        centArrow.setDirection(fCent.clone().normalize());
+        centArrow.setLength(Math.min(2.8, fCent.length() * 0.12), 0.34, 0.2);
+      }
+      if (velArrow.visible) {
+        velArrow.setDirection(vRot.clone().normalize());
+        velArrow.setLength(Math.min(2.4, vRot.length() * 0.3), 0.3, 0.18);
+      }
+
+      const ej = jacobiConstant(state.x, state.z, state.vx, state.vz);
+      document.getElementById('val-omega').textContent = `${params.omega.toFixed(2)} rad/s`;
+      document.getElementById('val-vrot').textContent = `${vRot.length().toFixed(2)} m/s`;
+      document.getElementById('val-fcor').textContent = `${fCor.length().toFixed(2)} N`;
+      document.getElementById('val-fcent').textContent = `${fCent.length().toFixed(2)} N`;
+      document.getElementById('val-ej').textContent = `${ej.toFixed(3)} J/kg`;
+
+      controls.update();
+      renderer.render(scene, camera);
+
+      if (now - lastTelemetry >= 1000) {
+        const fps = Math.round((frameCount * 1000) / (now - lastTelemetry));
+        window.parent.postMessage({
+          type: 'physicraft_telemetry',
+          fps,
+          hasNaN: Number.isNaN(state.x) || Number.isNaN(state.vx),
+          errors: runtimeErrors,
+          energyBounded: Math.abs(ej - state.ej0) < 0.05
+        }, '*');
+        frameCount = 0;
+        lastTelemetry = now;
+      }
+    }
+    requestAnimationFrame(animate);
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>

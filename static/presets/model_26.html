@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>26. Fourier Series Wave Synthesizer & Wave Packets</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #070b14;
+      color: #e2e8f0;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      overflow: hidden;
+      user-select: none;
+    }
+    #canvas-container { width: 100vw; height: 100vh; }
+    #hud {
+      position: fixed;
+      bottom: 20px;
+      left: 20px;
+      background: rgba(15, 23, 42, 0.88);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(56, 189, 248, 0.28);
+      border-radius: 12px;
+      padding: 16px 20px;
+      min-width: 320px;
+      max-width: 390px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+      z-index: 10;
+    }
+    #hud h2 {
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: #38bdf8;
+      margin-bottom: 10px;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+      padding-bottom: 6px;
+    }
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12.5px;
+      margin: 5px 0;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .stat-label { color: #94a3b8; }
+    .stat-val { color: #f8fafc; font-weight: 600; }
+    .legend {
+      margin-top: 10px;
+      padding-top: 8px;
+      border-top: 1px solid rgba(148, 163, 184, 0.18);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      font-size: 11.5px;
+    }
+    .legend-item { display: flex; align-items: center; gap: 8px; color: #cbd5e1; }
+    .swatch { width: 12px; height: 4px; border-radius: 2px; }
+  </style>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+      "lil-gui": "https://unpkg.com/lil-gui@0.19.1/dist/lil-gui.esm.min.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="canvas-container"></div>
+  <div id="hud">
+    <h2>26. Fourier Series &amp; Wave Packets</h2>
+    <div class="stat-row"><span class="stat-label">Mode:</span><span class="stat-val" id="val-mode">Square Wave</span></div>
+    <div class="stat-row"><span class="stat-label">Harmonics (N):</span><span class="stat-val" id="val-n">5</span></div>
+    <div class="stat-row"><span class="stat-label">Phase Velocity v_p:</span><span class="stat-val" id="val-vp">2.40 m/s</span></div>
+    <div class="stat-row"><span class="stat-label">Group Velocity v_g:</span><span class="stat-val" id="val-vg">2.40 m/s</span></div>
+    <div class="stat-row"><span class="stat-label">Instantaneous y(0,t):</span><span class="stat-val" id="val-y">0.000</span></div>
+    <div class="stat-row"><span class="stat-label">Parseval Power Σc_n²:</span><span class="stat-val" id="val-pwr">1.000</span></div>
+    <div class="legend">
+      <div class="legend-item"><span class="swatch" style="background:#38bdf8"></span>Synthesized Wave f(x, t)</div>
+      <div class="legend-item"><span class="swatch" style="background:#f59e0b"></span>Epicycle Phasor Vectors</div>
+      <div class="legend-item"><span class="swatch" style="background:#f43f5e"></span>Group Velocity v_g / Envelope</div>
+      <div class="legend-item"><span class="swatch" style="background:#a855f7"></span>Individual 3D Harmonic Modes (z-offset)</div>
+    </div>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import GUI from 'lil-gui';
+
+    const container = document.getElementById('canvas-container');
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x070b14);
+    scene.fog = new THREE.FogExp2(0x070b14, 0.018);
+
+    const camera = new THREE.PerspectiveCamera(48, window.innerWidth / window.innerHeight, 0.1, 200);
+    camera.position.set(-6, 7.5, 19);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    container.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.06;
+    controls.target.set(2.5, 0, -1.5);
+
+    // Lighting & reference grid
+    scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+    const dirLight = new THREE.DirectionalLight(0x93c5fd, 1.2);
+    dirLight.position.set(10, 20, 15);
+    scene.add(dirLight);
+
+    const grid = new THREE.GridHelper(32, 32, 0x1e293b, 0x0f172a);
+    grid.position.set(2, -4.2, -3);
+    scene.add(grid);
+
+    const params = {
+      waveform: 'Square',
+      harmonics: 5,
+      fundamentalFreq: 1.2,
+      amplitude: 2.2,
+      dispersion: 0.35, // controls group vs phase velocity ratio in Wave Packet mode
+      showHarmonics3D: true,
+      paused: false,
+      reset() {
+        this.waveform = 'Square';
+        this.harmonics = 5;
+        this.fundamentalFreq = 1.2;
+        this.amplitude = 2.2;
+        this.dispersion = 0.35;
+        this.showHarmonics3D = true;
+        this.paused = false;
+        simTime = 0;
+        gui.controllersRecursive().forEach(c => c.updateDisplay());
+      }
+    };
+
+    const gui = new GUI({ title: 'Fourier Wave Synthesizer' });
+    gui.add(params, 'waveform', ['Square', 'Sawtooth', 'Triangle', 'Wave Packet']).name('Waveform Preset');
+    gui.add(params, 'harmonics', 1, 15, 1).name('Harmonics (N)');
+    gui.add(params, 'fundamentalFreq', 0.3, 3.0, 0.05).name('Frequency ω₀');
+    gui.add(params, 'amplitude', 0.5, 3.5, 0.1).name('Amplitude Scale');
+    gui.add(params, 'dispersion', -0.5, 1.5, 0.05).name('Packet Dispersion');
+    gui.add(params, 'showHarmonics3D').name('3D Z-Harmonics');
+    gui.add(params, 'paused').name('Pause');
+    gui.add(params, 'reset').name('Reset');
+
+    // Epicycle center at x = -5.5, y = 0, z = 0
+    const epicycleOrigin = new THREE.Vector3(-5.5, 0, 0);
+    const waveStartX = -1.5;
+    const waveLengthX = 14.0;
+    const numWavePts = 360;
+
+    const maxHarmonics = 15;
+    const circles = [];
+    const phasorArrows = [];
+    const harmonicWaves = [];
+
+    const circleGeo = new THREE.BufferGeometry();
+    const circlePts = 64;
+    const cPos = new Float32Array((circlePts + 1) * 3);
+    for (let i = 0; i <= circlePts; i++) {
+      const th = (i / circlePts) * Math.PI * 2;
+      cPos[i * 3] = Math.cos(th);
+      cPos[i * 3 + 1] = Math.sin(th);
+      cPos[i * 3 + 2] = 0;
+    }
+    circleGeo.setAttribute('position', new THREE.BufferAttribute(cPos, 3));
+
+    for (let m = 0; m < maxHarmonics; m++) {
+      const cLine = new THREE.Line(
+        circleGeo,
+        new THREE.LineBasicMaterial({ color: 0x475569, transparent: true, opacity: 0.55 })
+      );
+      scene.add(cLine);
+      circles.push(cLine);
+
+      const arrow = new THREE.ArrowHelper(
+        new THREE.Vector3(1, 0, 0),
+        epicycleOrigin.clone(),
+        1,
+        0xf59e0b,
+        0.18,
+        0.1
+      );
+      scene.add(arrow);
+      phasorArrows.push(arrow);
+
+      const hGeo = new THREE.BufferGeometry();
+      hGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(numWavePts * 3), 3));
+      const hue = (0.72 - m * 0.038 + 1) % 1;
+      const col = new THREE.Color().setHSL(hue, 0.8, 0.6);
+      const hLine = new THREE.Line(
+        hGeo,
+        new THREE.LineBasicMaterial({ color: col, transparent: true, opacity: 0.45 })
+      );
+      scene.add(hLine);
+      harmonicWaves.push(hLine);
+    }
+
+    // Synthesized main wave line
+    const mainWaveGeo = new THREE.BufferGeometry();
+    mainWaveGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(numWavePts * 3), 3));
+    const mainWaveLine = new THREE.Line(
+      mainWaveGeo,
+      new THREE.LineBasicMaterial({ color: 0x38bdf8, linewidth: 2 })
+    );
+    scene.add(mainWaveLine);
+
+    // Upper & lower envelope lines (for Wave Packet mode)
+    const envUpGeo = new THREE.BufferGeometry();
+    envUpGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(numWavePts * 3), 3));
+    const envUpLine = new THREE.Line(
+      envUpGeo,
+      new THREE.LineDashedMaterial({ color: 0xf43f5e, dashSize: 0.25, gapSize: 0.15 })
+    );
+    scene.add(envUpLine);
+
+    const envDownGeo = new THREE.BufferGeometry();
+    envDownGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(numWavePts * 3), 3));
+    const envDownLine = new THREE.Line(
+      envDownGeo,
+      new THREE.LineDashedMaterial({ color: 0xf43f5e, dashSize: 0.25, gapSize: 0.15 })
+    );
+    scene.add(envDownLine);
+
+    // Connector line from final phasor tip to wave start
+    const connGeo = new THREE.BufferGeometry();
+    connGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
+    const connLine = new THREE.Line(
+      connGeo,
+      new THREE.LineDashedMaterial({ color: 0x94a3b8, dashSize: 0.18, gapSize: 0.12 })
+    );
+    scene.add(connLine);
+
+    // Tip glow sphere
+    const tipDot = new THREE.Mesh(
+      new THREE.SphereGeometry(0.11, 16, 16),
+      new THREE.MeshBasicMaterial({ color: 0x38bdf8 })
+    );
+    scene.add(tipDot);
+
+    // Phase & Group velocity arrows above wave
+    const vpArrow = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 3.3, 0), 1.5, 0x38bdf8, 0.3, 0.16);
+    const vgArrow = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 2.8, 0), 1.5, 0xf43f5e, 0.3, 0.16);
+    scene.add(vpArrow, vgArrow);
+
+    function getModeSpec(mIndex, N, mode, amp) {
+      if (mode === 'Square') {
+        const n = 2 * mIndex + 1;
+        const c = (4 / (Math.PI * n)) * amp;
+        return { n, c, phase: 0, k: n * 0.9, omegaRatio: n };
+      } else if (mode === 'Sawtooth') {
+        const n = mIndex + 1;
+        const sign = (mIndex % 2 === 0) ? 1 : -1;
+        const c = (2 / (Math.PI * n)) * sign * amp;
+        return { n, c, phase: 0, k: n * 0.9, omegaRatio: n };
+      } else if (mode === 'Triangle') {
+        const n = 2 * mIndex + 1;
+        const sign = (mIndex % 2 === 0) ? 1 : -1;
+        const c = (8 / (Math.PI * Math.PI * n * n)) * sign * amp;
+        return { n, c, phase: 0, k: n * 0.9, omegaRatio: n };
+      } else {
+        // Wave Packet: Gaussian-weighted cluster around carrier k0 = 3.2
+        const center = (N - 1) / 2;
+        const dm = mIndex - center;
+        const sigma = Math.max(1.2, N * 0.28);
+        const weight = Math.exp(-(dm * dm) / (2 * sigma * sigma));
+        const norm = Math.max(1, N * 0.35);
+        const c = (amp / norm) * weight;
+        const k0 = 3.2;
+        const dk = 0.35;
+        const k = k0 + dm * dk;
+        // Dispersion relation: omega(k) = omega0 * (1 + dispersion * (k - k0)/k0)
+        const omegaRatio = 1.0 + params.dispersion * ((k - k0) / k0);
+        return { n: k, c, phase: 0, k, omegaRatio };
+      }
+    }
+
+    let simTime = 0;
+    let lastClock = performance.now();
+    let frameCount = 0;
+    let currentFps = 60;
+    let hasNaN = false;
+
+    const elMode = document.getElementById('val-mode');
+    const elN = document.getElementById('val-n');
+    const elVp = document.getElementById('val-vp');
+    const elVg = document.getElementById('val-vg');
+    const elY = document.getElementById('val-y');
+    const elPwr = document.getElementById('val-pwr');
+
+    function updateSimulation(dt) {
+      if (!params.paused) {
+        simTime += dt;
+      }
+
+      const N = params.harmonics;
+      const w0 = params.fundamentalFreq * 2.0;
+      let curX = epicycleOrigin.x;
+      let curY = epicycleOrigin.y;
+      let powerSum = 0;
+
+      const specs = [];
+      for (let m = 0; m < maxHarmonics; m++) {
+        if (m < N) {
+          const spec = getModeSpec(m, N, params.waveform, params.amplitude);
+          specs.push(spec);
+          powerSum += 0.5 * spec.c * spec.c;
+
+          const angle = spec.omegaRatio * w0 * simTime + spec.phase;
+          const radius = Math.abs(spec.c);
+          const dx = spec.c * Math.cos(angle);
+          const dy = spec.c * Math.sin(angle);
+
+          circles[m].visible = radius > 0.015;
+          circles[m].position.set(curX, curY, 0);
+          circles[m].scale.set(radius, radius, 1);
+
+          phasorArrows[m].visible = radius > 0.015;
+          phasorArrows[m].position.set(curX, curY, 0);
+          const dir = new THREE.Vector3(dx, dy, 0);
+          const len = dir.length();
+          if (len > 1e-4) {
+            dir.divideScalar(len);
+            phasorArrows[m].setDirection(dir);
+            phasorArrows[m].setLength(len, Math.min(0.22, len * 0.35), Math.min(0.12, len * 0.2));
+          }
+
+          curX += dx;
+          curY += dy;
+        } else {
+          circles[m].visible = false;
+          phasorArrows[m].visible = false;
+          harmonicWaves[m].visible = false;
+        }
+      }
+
+      tipDot.position.set(curX, curY, 0);
+
+      // Update connector line
+      const connArr = connGeo.attributes.position.array;
+      connArr[0] = curX; connArr[1] = curY; connArr[2] = 0;
+      connArr[3] = waveStartX; connArr[4] = curY; connArr[5] = 0;
+      connGeo.attributes.position.needsUpdate = true;
+      connLine.computeLineDistances();
+
+      // Update wave and 3D harmonic waves
+      const mainArr = mainWaveGeo.attributes.position.array;
+      const upArr = envUpGeo.attributes.position.array;
+      const downArr = envDownGeo.attributes.position.array;
+
+      const k0 = 3.2;
+      const vp = w0 / (params.waveform === 'Wave Packet' ? k0 : 0.9);
+      const vg = params.waveform === 'Wave Packet' ? vp * params.dispersion : vp;
+
+      for (let i = 0; i < numWavePts; i++) {
+        const u = i / (numWavePts - 1);
+        const xDist = u * waveLengthX;
+        const worldX = waveStartX + xDist;
+
+        let sumY = 0;
+        let cosEnv = 0;
+        let sinEnv = 0;
+
+        for (let m = 0; m < N; m++) {
+          const sp = specs[m];
+          const phaseArg = sp.omegaRatio * w0 * simTime - sp.k * xDist + sp.phase;
+          const valY = sp.c * Math.sin(phaseArg);
+          sumY += valY;
+
+          if (params.waveform === 'Wave Packet') {
+            const dPhase = (sp.omegaRatio - 1.0) * w0 * simTime - (sp.k - k0) * xDist;
+            cosEnv += sp.c * Math.cos(dPhase);
+            sinEnv += sp.c * Math.sin(dPhase);
+          }
+
+          if (params.showHarmonics3D) {
+            harmonicWaves[m].visible = true;
+            const hArr = harmonicWaves[m].geometry.attributes.position.array;
+            const zOffset = -(m + 1) * 0.85;
+            hArr[i * 3] = worldX;
+            hArr[i * 3 + 1] = valY;
+            hArr[i * 3 + 2] = zOffset;
+          } else {
+            harmonicWaves[m].visible = false;
+          }
+        }
+
+        mainArr[i * 3] = worldX;
+        mainArr[i * 3 + 1] = sumY;
+        mainArr[i * 3 + 2] = 0;
+
+        if (params.waveform === 'Wave Packet') {
+          const envAmp = Math.sqrt(cosEnv * cosEnv + sinEnv * sinEnv);
+          upArr[i * 3] = worldX;
+          upArr[i * 3 + 1] = envAmp;
+          upArr[i * 3 + 2] = 0;
+
+          downArr[i * 3] = worldX;
+          downArr[i * 3 + 1] = -envAmp;
+          downArr[i * 3 + 2] = 0;
+        }
+      }
+
+      for (let m = 0; m < N; m++) {
+        if (params.showHarmonics3D) {
+          harmonicWaves[m].geometry.attributes.position.needsUpdate = true;
+        }
+      }
+      mainWaveGeo.attributes.position.needsUpdate = true;
+
+      if (params.waveform === 'Wave Packet') {
+        envUpLine.visible = true;
+        envDownLine.visible = true;
+        envUpGeo.attributes.position.needsUpdate = true;
+        envDownGeo.attributes.position.needsUpdate = true;
+        envUpLine.computeLineDistances();
+        envDownLine.computeLineDistances();
+      } else {
+        envUpLine.visible = false;
+        envDownLine.visible = false;
+      }
+
+      // Update phase & group velocity arrows
+      const vpLen = Math.min(3.5, Math.max(0.3, Math.abs(vp) * 0.6));
+      vpArrow.setDirection(new THREE.Vector3(vp >= 0 ? 1 : -1, 0, 0));
+      vpArrow.setLength(vpLen, 0.25, 0.14);
+
+      const vgLen = Math.min(3.5, Math.max(0.2, Math.abs(vg) * 0.6));
+      vgArrow.setDirection(new THREE.Vector3(vg >= 0 ? 1 : -1, 0, 0));
+      vgArrow.setLength(vgLen, 0.25, 0.14);
+
+      if (Number.isNaN(curY) || Number.isNaN(powerSum)) hasNaN = true;
+
+      // Update HUD
+      elMode.textContent = params.waveform;
+      elN.textContent = String(N);
+      elVp.textContent = `${vp.toFixed(2)} m/s`;
+      elVg.textContent = `${vg.toFixed(2)} m/s`;
+      elY.textContent = curY.toFixed(3);
+      elPwr.textContent = powerSum.toFixed(3);
+    }
+
+    function animate(now) {
+      requestAnimationFrame(animate);
+      const dt = Math.min((now - lastClock) / 1000, 0.05);
+      lastClock = now;
+      frameCount++;
+
+      updateSimulation(dt);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+    requestAnimationFrame(animate);
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    // 1-second telemetry heartbeat
+    setInterval(() => {
+      currentFps = frameCount;
+      frameCount = 0;
+      window.parent.postMessage({
+        type: 'physicraft_telemetry',
+        fps: currentFps || 60,
+        hasNaN: hasNaN,
+        errors: [],
+        energyBounded: true
+      }, '*');
+    }, 1000);
+  </script>
+</body>
+</html>

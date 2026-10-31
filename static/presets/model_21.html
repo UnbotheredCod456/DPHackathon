@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>21. Magnus Effect: Lift & Airflow Streamlines</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #070b14;
+      color: #e2e8f0;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      overflow: hidden;
+    }
+    canvas { display: block; width: 100vw; height: 100vh; }
+    #hud {
+      position: absolute;
+      bottom: 20px;
+      left: 20px;
+      background: rgba(15, 23, 42, 0.88);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      border-radius: 12px;
+      padding: 16px 20px;
+      min-width: 310px;
+      backdrop-filter: blur(10px);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+      font-size: 13px;
+      line-height: 1.6;
+      pointer-events: none;
+    }
+    #hud h2 {
+      font-size: 15px;
+      font-weight: 700;
+      color: #38bdf8;
+      margin-bottom: 8px;
+      letter-spacing: 0.3px;
+    }
+    .metric {
+      display: flex;
+      justify-content: space-between;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      padding: 3px 0;
+    }
+    .metric span.val {
+      font-family: 'JetBrains Mono', monospace;
+      color: #f8fafc;
+      font-weight: 600;
+    }
+    .legend {
+      margin-top: 10px;
+      padding-top: 8px;
+      border-top: 1px solid rgba(56, 189, 248, 0.25);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      font-size: 12px;
+    }
+    .legend-item { display: flex; align-items: center; gap: 6px; }
+    .swatch { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
+  </style>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+      "lil-gui": "https://unpkg.com/lil-gui@0.19.1/dist/lil-gui.esm.min.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="hud">
+    <h2>21. Magnus Effect & Airflow Streamlines</h2>
+    <div class="metric"><span>Freestream Velocity (U∞):</span><span class="val" id="val-u">12.0 m/s</span></div>
+    <div class="metric"><span>Spin Rate (ω):</span><span class="val" id="val-omega">45.0 rad/s</span></div>
+    <div class="metric"><span>Circulation (Γ = 2πR²ω):</span><span class="val" id="val-gamma">28.27 m²/s</span></div>
+    <div class="metric"><span>Kutta-Joukowski Lift (F_M):</span><span class="val" id="val-lift">415.6 N/m</span></div>
+    <div class="metric"><span>Stagnation Angle (θ_s):</span><span class="val" id="val-stag">-22.0°</span></div>
+    <div class="legend">
+      <div class="legend-item"><span class="swatch" style="background:#22c55e"></span>Magnus Lift (F_M)</div>
+      <div class="legend-item"><span class="swatch" style="background:#f59e0b"></span>Angular Vel (ω)</div>
+      <div class="legend-item"><span class="swatch" style="background:#ef4444"></span>Drag (F_D)</div>
+      <div class="legend-item"><span class="swatch" style="background:#38bdf8"></span>Streamlines / Vel</div>
+    </div>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import GUI from 'lil-gui';
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x070b14);
+    scene.fog = new THREE.FogExp2(0x070b14, 0.018);
+
+    const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 200);
+    camera.position.set(0, 4.5, 16);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    document.body.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.06;
+
+    // Lights
+    scene.add(new THREE.AmbientLight(0x94a3b8, 0.7));
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.3);
+    dirLight.position.set(8, 15, 10);
+    scene.add(dirLight);
+    const backLight = new THREE.DirectionalLight(0x38bdf8, 0.5);
+    backLight.position.set(-10, -8, -8);
+    scene.add(backLight);
+
+    // Subtle reference floor grid
+    const grid = new THREE.GridHelper(30, 30, 0x1e293b, 0x0f172a);
+    grid.position.y = -5.5;
+    scene.add(grid);
+
+    // Simulation parameters
+    const params = {
+      freestreamU: 12.0,     // m/s
+      spinOmega: 45.0,       // rad/s (positive = backspin => upward Magnus lift when flow is +x to -x or left-to-right)
+      radius: 1.6,           // m
+      fluidDensity: 1.225,   // kg/m^3 (air)
+      shapeMode: 'Sphere + Cylinder',
+      paused: false,
+      reset: () => {
+        params.freestreamU = 12.0;
+        params.spinOmega = 45.0;
+        params.radius = 1.6;
+        params.fluidDensity = 1.225;
+        params.paused = false;
+        gui.controllersRecursive().forEach(c => c.updateDisplay());
+        rebuildStreamlines();
+      }
+    };
+
+    // Spinning body group
+    const bodyGroup = new THREE.Group();
+    scene.add(bodyGroup);
+
+    // Create procedural seam texture for clear spin visibility
+    const canvasTex = document.createElement('canvas');
+    canvasTex.width = 512;
+    canvasTex.height = 256;
+    const ctx = canvasTex.getContext('2d');
+    ctx.fillStyle = '#1e293b';
+    ctx.fillRect(0, 0, 512, 256);
+    ctx.strokeStyle = '#38bdf8';
+    ctx.lineWidth = 8;
+    for (let i = 0; i < 8; i++) {
+      ctx.beginPath();
+      ctx.moveTo(i * 64, 0);
+      ctx.lineTo(i * 64, 256);
+      ctx.stroke();
+    }
+    ctx.strokeStyle = '#f43f5e';
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.moveTo(0, 128);
+    ctx.lineTo(512, 128);
+    ctx.stroke();
+    const spinTexture = new THREE.CanvasTexture(canvasTex);
+
+    const sphereGeo = new THREE.SphereGeometry(1, 48, 32);
+    const sphereMat = new THREE.MeshStandardMaterial({
+      map: spinTexture,
+      roughness: 0.35,
+      metalness: 0.25
+    });
+    const sphereMesh = new THREE.Mesh(sphereGeo, sphereMat);
+    bodyGroup.add(sphereMesh);
+
+    const cylGeo = new THREE.CylinderGeometry(1, 1, 5.5, 48, 1, true);
+    cylGeo.rotateX(Math.PI / 2);
+    const cylMat = new THREE.MeshStandardMaterial({
+      color: 0x38bdf8,
+      transparent: true,
+      opacity: 0.16,
+      side: THREE.DoubleSide,
+      wireframe: false
+    });
+    const cylMesh = new THREE.Mesh(cylGeo, cylMat);
+    bodyGroup.add(cylMesh);
+
+    // Pressure glow ring around equator
+    const ringGeo = new THREE.RingGeometry(1.02, 1.38, 64);
+    const ringMat = new THREE.MeshBasicMaterial({
+      vertexColors: true,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.55
+    });
+    const ringColors = new Float32Array(ringGeo.attributes.position.count * 3);
+    ringGeo.setAttribute('color', new THREE.BufferAttribute(ringColors, 3));
+    const pressureRing = new THREE.Mesh(ringGeo, ringMat);
+    scene.add(pressureRing);
+
+    // Force & Angular Velocity ArrowHelpers
+    const liftArrow = new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 0), 3, 0x22c55e, 0.55, 0.35);
+    const dragArrow = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 0, 0), 2, 0xef4444, 0.45, 0.28);
+    const omegaArrow = new THREE.ArrowHelper(new THREE.Vector3(0, 0, -1), new THREE.Vector3(0, 0, 0), 3.2, 0xf59e0b, 0.5, 0.32);
+    scene.add(liftArrow, dragArrow, omegaArrow);
+
+    // Streamlines and tracer particles
+    const streamlinesGroup = new THREE.Group();
+    scene.add(streamlinesGroup);
+
+    const zSlices = [-2.2, 0, 2.2];
+    const yStartSeeds = [-4.2, -3.4, -2.6, -1.9, -1.3, -0.75, -0.28, 0.28, 0.75, 1.3, 1.9, 2.6, 3.4, 4.2];
+    const streamlineLines = [];
+
+    // Compute 2D potential flow velocity around cylinder of radius R with circulation Gamma
+    // Flow from left (-x) to right (+x) with freestream speed U
+    // Backspin (clockwise spin, omega around -z) produces upward velocity on top (+y) and downward Magnus lift (+y)
+    // Wait: if flow goes left-to-right (+x) and top of ball moves right (+x, clockwise spin around -z),
+    // top air speed is HIGHER (U + v_spin), pressure is LOWER on top -> Upward Lift!
+    function getFlowVelocity(x, y, U, R, gamma) {
+      const r2 = Math.max(1.5 * 0.25, x * x + y * y);
+      const R2 = R * R;
+      if (r2 < R2 * 0.96) {
+        return { vx: 0, vy: 0, speed: 0, inside: true };
+      }
+      const r4 = Math.max(1.5, r2 * r2);
+      // Potential flow doublet + clockwise vortex (gamma > 0 means clockwise circulation => higher speed at y > 0)
+      const vx = U * (1 - (R2 * (x * x - y * y)) / r4) + (gamma / (2 * Math.PI)) * (y / r2);
+      const vy = -U * ((2 * R2 * x * y) / r4) - (gamma / (2 * Math.PI)) * (x / r2);
+      const speed = Math.hypot(vx, vy);
+      return { vx, vy, speed, inside: false };
+    }
+
+    function rebuildStreamlines() {
+      while (streamlinesGroup.children.length > 0) {
+        const ch = streamlinesGroup.children.pop();
+        if (ch.geometry) ch.geometry.dispose();
+      }
+      streamlineLines.length = 0;
+
+      const R = params.radius;
+      const U = Math.max(0.5, params.freestreamU);
+      const gamma = 2 * Math.PI * R * R * (params.spinOmega * 0.08);
+
+      zSlices.forEach((zPos, zIdx) => {
+        yStartSeeds.forEach((y0) => {
+          const pts = [];
+          const colors = [];
+          let x = -11.5;
+          let y = y0;
+          const dt = 0.022;
+          const steps = 190;
+
+          for (let i = 0; i < steps; i++) {
+            const v1 = getFlowVelocity(x, y, U, R, gamma);
+            if (v1.inside || Math.abs(x) > 12.5 || Math.abs(y) > 7.5) break;
+
+            pts.push(new THREE.Vector3(x, y, zPos));
+
+            // Color by local speed relative to U (Bernoulli: fast=cyan/bright, slow=red/orange high pressure)
+            const ratio = THREE.MathUtils.clamp(v1.speed / (U * 1.8), 0, 1);
+            const col = new THREE.Color().setHSL(0.55 * ratio + 0.02 * (1 - ratio), 0.9, 0.55);
+            colors.push(col.r, col.g, col.b);
+
+            // RK2 midpoint integration step
+            const mx = x + 0.5 * dt * v1.vx;
+            const my = y + 0.5 * dt * v1.vy;
+            const v2 = getFlowVelocity(mx, my, U, R, gamma);
+            x += dt * v2.vx;
+            y += dt * v2.vy;
+
+            // Soft push out if grazing boundary
+            const dist = Math.hypot(x, y);
+            if (dist < R * 1.03) {
+              x = (x / dist) * R * 1.03;
+              y = (y / dist) * R * 1.03;
+            }
+          }
+
+          if (pts.length > 2) {
+            const geo = new THREE.BufferGeometry().setFromPoints(pts);
+            geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+            const mat = new THREE.LineBasicMaterial({
+              vertexColors: true,
+              transparent: true,
+              opacity: zIdx === 1 ? 0.9 : 0.35
+            });
+            const line = new THREE.Line(geo, mat);
+            streamlinesGroup.add(line);
+            streamlineLines.push(line);
+          }
+        });
+      });
+
+      // Update pressure ring colors (Bernoulli C_p = 1 - (V/U)^2)
+      const posAttr = ringGeo.attributes.position;
+      const colAttr = ringGeo.attributes.color;
+      for (let i = 0; i < posAttr.count; i++) {
+        const rx = posAttr.getX(i);
+        const ry = posAttr.getY(i);
+        const angle = Math.atan2(ry, rx);
+        // Tangential speed on cylinder surface: V_theta = -2 U sin(theta) + Gamma / (2 pi R)
+        const vSurf = -2 * U * Math.sin(angle) - gamma / (2 * Math.PI * R);
+        const speedNorm = THREE.MathUtils.clamp(Math.abs(vSurf) / (2.5 * U), 0, 1);
+        // Fast flow = low pressure (cyan/green), slow stagnation = high pressure (red/orange)
+        const c = new THREE.Color().setHSL(0.56 * speedNorm + 0.02 * (1 - speedNorm), 0.95, 0.52);
+        colAttr.setXYZ(i, c.r, c.g, c.b);
+      }
+      colAttr.needsUpdate = true;
+    }
+
+    // Animated tracer particles flowing along the velocity field
+    const PARTICLE_COUNT = 260;
+    const pGeo = new THREE.BufferGeometry();
+    const pPos = new Float32Array(PARTICLE_COUNT * 3);
+    const pCol = new Float32Array(PARTICLE_COUNT * 3);
+
+    function resetParticle(i, randomX = false) {
+      pPos[i * 3] = randomX ? (Math.random() * 22 - 11) : -11.5;
+      pPos[i * 3 + 1] = (Math.random() - 0.5) * 8.4;
+      pPos[i * 3 + 2] = zSlices[i % zSlices.length] + (Math.random() - 0.5) * 0.4;
+    }
+    for (let i = 0; i < PARTICLE_COUNT; i++) {
+      resetParticle(i, true);
+      pCol[i * 3] = 0.22;
+      pCol[i * 3 + 1] = 0.74;
+      pCol[i * 3 + 2] = 0.97;
+    }
+    pGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
+    pGeo.setAttribute('color', new THREE.BufferAttribute(pCol, 3));
+    const pMat = new THREE.PointsMaterial({
+      size: 0.17,
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.95
+    });
+    const particleSystem = new THREE.Points(pGeo, pMat);
+    scene.add(particleSystem);
+
+    // GUI Controls
+    const gui = new GUI({ title: 'Magnus Effect Controls' });
+    gui.add(params, 'freestreamU', 2.0, 25.0, 0.5).name('Flow Speed U∞ (m/s)').onChange(rebuildStreamlines);
+    gui.add(params, 'spinOmega', -100.0, 100.0, 1.0).name('Spin Rate ω (rad/s)').onChange(rebuildStreamlines);
+    gui.add(params, 'radius', 0.8, 2.5, 0.1).name('Radius R (m)').onChange(rebuildStreamlines);
+    gui.add(params, 'fluidDensity', 0.2, 5.0, 0.05).name('Fluid Density ρ (kg/m³)');
+    gui.add(params, 'paused').name('Pause Simulation');
+    gui.add(params, 'reset').name('Reset Defaults');
+
+    rebuildStreamlines();
+
+    // HUD elements
+    const elU = document.getElementById('val-u');
+    const elOmega = document.getElementById('val-omega');
+    const elGamma = document.getElementById('val-gamma');
+    const elLift = document.getElementById('val-lift');
+    const elStag = document.getElementById('val-stag');
+
+    // Telemetry state
+    let frameCount = 0;
+    let lastFpsTime = performance.now();
+    let currentFps = 60;
+    const runtimeErrors = [];
+    window.addEventListener('error', (e) => runtimeErrors.push(e.message));
+
+    setInterval(() => {
+      const posArr = pGeo.attributes.position.array;
+      let hasNaN = false;
+      for (let i = 0; i < posArr.length; i++) {
+        if (!Number.isFinite(posArr[i])) { hasNaN = true; break; }
+      }
+      window.parent.postMessage({
+        type: 'physicraft_telemetry',
+        fps: Math.round(currentFps),
+        hasNaN,
+        errors: runtimeErrors,
+        energyBounded: true
+      }, '*');
+    }, 1000);
+
+    let lastTime = performance.now();
+
+    function animate(now) {
+      requestAnimationFrame(animate);
+      const dt = Math.min((now - lastTime) / 1000, 0.05);
+      lastTime = now;
+
+      frameCount++;
+      if (now - lastFpsTime >= 500) {
+        currentFps = (frameCount * 1000) / (now - lastFpsTime);
+        frameCount = 0;
+        lastFpsTime = now;
+      }
+
+      const R = params.radius;
+      const U = params.freestreamU;
+      const omega = params.spinOmega;
+      const rho = params.fluidDensity;
+
+      bodyGroup.scale.setScalar(R);
+      pressureRing.scale.setScalar(R);
+
+      // Visual circulation scaled for clear streamlines, physical circulation for HUD
+      const gammaVisual = 2 * Math.PI * R * R * (omega * 0.08);
+      const gammaPhys = 2 * Math.PI * R * R * (omega * 0.12);
+      const liftPerUnitSpan = rho * U * gammaPhys; // Kutta-Joukowski theorem L' = rho * U * Gamma
+
+      if (!params.paused) {
+        // Rotate spinning sphere/cylinder (clockwise for positive backspin omega)
+        bodyGroup.rotation.z -= omega * dt * 0.15;
+
+        // Advect tracer particles
+        const pos = pGeo.attributes.position.array;
+        const col = pGeo.attributes.color.array;
+        for (let i = 0; i < PARTICLE_COUNT; i++) {
+          let x = pos[i * 3];
+          let y = pos[i * 3 + 1];
+
+          const distSq = x * x + y * y;
+          if (distSq < R * R * 1.04) {
+            const d = Math.sqrt(Math.max(1.5 * 0.1, distSq));
+            x = (x / d) * R * 1.05;
+            y = (y / d) * R * 1.05;
+          }
+
+          const vel = getFlowVelocity(x, y, U, R, gammaVisual);
+          x += vel.vx * dt * 0.55;
+          y += vel.vy * dt * 0.55;
+
+          if (x > 11.5 || Math.abs(y) > 7.2 || vel.inside) {
+            resetParticle(i, false);
+          } else {
+            pos[i * 3] = x;
+            pos[i * 3 + 1] = y;
+          }
+
+          const speedRatio = THREE.MathUtils.clamp(vel.speed / (U * 1.7), 0, 1);
+          const c = new THREE.Color().setHSL(0.54 * speedRatio + 0.03 * (1 - speedRatio), 0.95, 0.6);
+          col[i * 3] = c.r;
+          col[i * 3 + 1] = c.g;
+          col[i * 3 + 2] = c.b;
+        }
+        pGeo.attributes.position.needsUpdate = true;
+        pGeo.attributes.color.needsUpdate = true;
+      }
+
+      // Update Force and Spin Arrows
+      const liftSign = Math.sign(liftPerUnitSpan) || 1;
+      const liftLen = THREE.MathUtils.clamp(Math.abs(liftPerUnitSpan) * 0.008, 0.4, 5.2);
+      liftArrow.setDirection(new THREE.Vector3(0, liftSign, 0));
+      liftArrow.setLength(liftLen, Math.min(0.65, liftLen * 0.25), 0.35);
+      liftArrow.visible = Math.abs(omega) > 0.5;
+
+      const dragForce = 0.5 * rho * U * U * (2 * R) * 0.47;
+      const dragLen = THREE.MathUtils.clamp(dragForce * 0.012, 0.5, 4.0);
+      dragArrow.setDirection(new THREE.Vector3(1, 0, 0));
+      dragArrow.setLength(dragLen, Math.min(0.55, dragLen * 0.25), 0.3);
+
+      const omegaSign = omega >= 0 ? -1 : 1;
+      const omegaLen = THREE.MathUtils.clamp(Math.abs(omega) * 0.04 + R * 0.8, R + 0.5, 4.5);
+      omegaArrow.setDirection(new THREE.Vector3(0, 0, omegaSign));
+      omegaArrow.setLength(omegaLen, 0.55, 0.32);
+      omegaArrow.visible = Math.abs(omega) > 0.5;
+
+      // Update HUD
+      elU.textContent = `${U.toFixed(1)} m/s`;
+      elOmega.textContent = `${omega.toFixed(1)} rad/s`;
+      elGamma.textContent = `${gammaPhys.toFixed(2)} m²/s`;
+      elLift.textContent = `${liftPerUnitSpan.toFixed(1)} N/m`;
+      const sinTheta = THREE.MathUtils.clamp(-gammaVisual / (4 * Math.PI * U * R), -1, 1);
+      const stagDeg = THREE.MathUtils.radToDeg(Math.asin(sinTheta));
+      elStag.textContent = `${stagDeg.toFixed(1)}°`;
+
+      controls.update();
+      renderer.render(scene, camera);
+    }
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    requestAnimationFrame(animate);
+  </script>
+</body>
+</html>

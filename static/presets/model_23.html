@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>23. 2D Ripple Tank: Interference, Diffraction & Refraction</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #070b14;
+      color: #e2e8f0;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      overflow: hidden;
+    }
+    canvas { display: block; width: 100vw; height: 100vh; }
+    #hud {
+      position: absolute;
+      bottom: 20px;
+      left: 20px;
+      background: rgba(15, 23, 42, 0.88);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      border-radius: 12px;
+      padding: 16px 20px;
+      min-width: 325px;
+      backdrop-filter: blur(10px);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+      font-size: 13px;
+      line-height: 1.6;
+      pointer-events: none;
+    }
+    #hud h2 {
+      font-size: 15px;
+      font-weight: 700;
+      color: #38bdf8;
+      margin-bottom: 8px;
+    }
+    .metric {
+      display: flex;
+      justify-content: space-between;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      padding: 3px 0;
+    }
+    .metric span.val {
+      font-family: 'JetBrains Mono', monospace;
+      color: #f8fafc;
+      font-weight: 600;
+    }
+    .legend {
+      margin-top: 10px;
+      padding-top: 8px;
+      border-top: 1px solid rgba(56, 189, 248, 0.25);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      font-size: 12px;
+    }
+    .legend-item { display: flex; align-items: center; gap: 6px; }
+    .swatch { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
+  </style>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+      "lil-gui": "https://unpkg.com/lil-gui@0.19.1/dist/lil-gui.esm.min.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="hud">
+    <h2>23. 2D Ripple Tank Wave Surface</h2>
+    <div class="metric"><span>Tank Experiment:</span><span class="val" id="val-mode">Two-Source Interference</span></div>
+    <div class="metric"><span>Wavelength (λ₁):</span><span class="val" id="val-lambda">2.20 m</span></div>
+    <div class="metric"><span>Source Separation / Slit (d):</span><span class="val" id="val-sep">4.50 m</span></div>
+    <div class="metric"><span>Refraction Index Ratio (n₂/n₁):</span><span class="val" id="val-index">1.60</span></div>
+    <div class="metric"><span>Snell Refracted Angle (θ₂):</span><span class="val" id="val-snell">--</span></div>
+    <div class="legend">
+      <div class="legend-item"><span class="swatch" style="background:#38bdf8"></span>Wave Crest (+η)</div>
+      <div class="legend-item"><span class="swatch" style="background:#1e3a8a"></span>Wave Trough (-η)</div>
+      <div class="legend-item"><span class="swatch" style="background:#22c55e"></span>Ray Vector (k₁)</div>
+      <div class="legend-item"><span class="swatch" style="background:#f59e0b"></span>Refracted / Diffracted (k₂)</div>
+    </div>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import GUI from 'lil-gui';
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x070b14);
+    scene.fog = new THREE.FogExp2(0x070b14, 0.015);
+
+    const camera = new THREE.PerspectiveCamera(48, window.innerWidth / window.innerHeight, 0.1, 200);
+    camera.position.set(0, 15, 17);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    document.body.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.06;
+
+    scene.add(new THREE.AmbientLight(0x94a3b8, 0.8));
+    const dirLight1 = new THREE.DirectionalLight(0xffffff, 1.4);
+    dirLight1.position.set(12, 22, 14);
+    scene.add(dirLight1);
+    const dirLight2 = new THREE.DirectionalLight(0x38bdf8, 0.6);
+    dirLight2.position.set(-12, 10, -12);
+    scene.add(dirLight2);
+
+    const params = {
+      experiment: 'Two-Source Interference', // 'Two-Source Interference', 'Single-Slit Diffraction', 'Refraction (Snell\'s Law)'
+      wavelength: 2.2,
+      frequency: 1.2,
+      amplitude: 0.42,
+      separationOrSlit: 4.5,
+      refractiveIndex: 1.65,
+      incidentAngleDeg: 32,
+      paused: false,
+      reset: () => {
+        params.experiment = 'Two-Source Interference';
+        params.wavelength = 2.2;
+        params.frequency = 1.2;
+        params.amplitude = 0.42;
+        params.separationOrSlit = 4.5;
+        params.refractiveIndex = 1.65;
+        params.incidentAngleDeg = 32;
+        params.paused = false;
+        simTime = 0;
+        gui.controllersRecursive().forEach(c => c.updateDisplay());
+      }
+    };
+
+    // Ripple Tank Frame
+    const TANK_SIZE = 18;
+    const frameGeo = new THREE.EdgesGeometry(new THREE.BoxGeometry(TANK_SIZE + 0.4, 1.6, TANK_SIZE + 0.4));
+    const frameLine = new THREE.LineSegments(frameGeo, new THREE.LineBasicMaterial({ color: 0x334155 }));
+    frameLine.position.y = -0.2;
+    scene.add(frameLine);
+
+    // 3D Animated Water Surface Mesh
+    const GRID_RES = 110;
+    const waterGeo = new THREE.PlaneGeometry(TANK_SIZE, TANK_SIZE, GRID_RES, GRID_RES);
+    waterGeo.rotateX(-Math.PI / 2);
+    const vertexCount = waterGeo.attributes.position.count;
+    const waterColors = new Float32Array(vertexCount * 3);
+    waterGeo.setAttribute('color', new THREE.BufferAttribute(waterColors, 3));
+
+    const waterMat = new THREE.MeshStandardMaterial({
+      vertexColors: true,
+      roughness: 0.2,
+      metalness: 0.35,
+      side: THREE.DoubleSide
+    });
+    const waterMesh = new THREE.Mesh(waterGeo, waterMat);
+    scene.add(waterMesh);
+
+    // Visual props for sources, slit walls, and shallow refraction shelf
+    const source1Mesh = new THREE.Mesh(
+      new THREE.SphereGeometry(0.32, 20, 20),
+      new THREE.MeshStandardMaterial({ color: 0xf43f5e, emissive: 0x9f1239 })
+    );
+    const source2Mesh = source1Mesh.clone();
+    scene.add(source1Mesh, source2Mesh);
+
+    // Diffraction Barrier Walls
+    const wallMat = new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.4, metalness: 0.3 });
+    const leftWall = new THREE.Mesh(new THREE.BoxGeometry(8, 1.4, 0.35), wallMat);
+    const rightWall = new THREE.Mesh(new THREE.BoxGeometry(8, 1.4, 0.35), wallMat);
+    scene.add(leftWall, rightWall);
+
+    // Shallow glass block for refraction
+    const shelfMat = new THREE.MeshStandardMaterial({
+      color: 0xf59e0b,
+      transparent: true,
+      opacity: 0.22,
+      roughness: 0.2
+    });
+    const refractionShelf = new THREE.Mesh(new THREE.BoxGeometry(TANK_SIZE, 0.8, TANK_SIZE / 2), shelfMat);
+    refractionShelf.position.set(0, -0.45, TANK_SIZE / 4);
+    scene.add(refractionShelf);
+
+    // Wave propagation vector arrows
+    const arrowK1 = new THREE.ArrowHelper(new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 0.9, -4), 4.2, 0x22c55e, 0.55, 0.35);
+    const arrowK2 = new THREE.ArrowHelper(new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 0.9, 0), 4.2, 0xf59e0b, 0.55, 0.35);
+    scene.add(arrowK1, arrowK2);
+
+    // GUI
+    const gui = new GUI({ title: 'Ripple Tank Controls' });
+    gui.add(params, 'experiment', [
+      'Two-Source Interference',
+      'Single-Slit Diffraction',
+      'Refraction (Snell\'s Law)'
+    ]).name('Experiment Mode');
+    gui.add(params, 'wavelength', 1.0, 4.0, 0.1).name('Wavelength λ₁ (m)');
+    gui.add(params, 'frequency', 0.4, 2.5, 0.1).name('Frequency f (Hz)');
+    gui.add(params, 'amplitude', 0.1, 0.8, 0.02).name('Wave Amplitude A');
+    gui.add(params, 'separationOrSlit', 1.2, 7.5, 0.2).name('Source Sep / Slit (m)');
+    gui.add(params, 'refractiveIndex', 1.1, 2.4, 0.05).name('Medium Index n₂/n₁');
+    gui.add(params, 'incidentAngleDeg', 0, 60, 1).name('Incident Angle θ₁ (°)');
+    gui.add(params, 'paused').name('Pause Simulation');
+    gui.add(params, 'reset').name('Reset Defaults');
+
+    const elMode = document.getElementById('val-mode');
+    const elLambda = document.getElementById('val-lambda');
+    const elSep = document.getElementById('val-sep');
+    const elIndex = document.getElementById('val-index');
+    const elSnell = document.getElementById('val-snell');
+
+    let simTime = 0;
+    let lastTime = performance.now();
+    let frameCount = 0;
+    let lastFpsTime = performance.now();
+    let currentFps = 60;
+    const runtimeErrors = [];
+    window.addEventListener('error', (e) => runtimeErrors.push(e.message));
+
+    setInterval(() => {
+      const posArr = waterGeo.attributes.position.array;
+      let hasNaN = false;
+      for (let i = 0; i < 60; i++) {
+        if (!Number.isFinite(posArr[i])) { hasNaN = true; break; }
+      }
+      window.parent.postMessage({
+        type: 'physicraft_telemetry',
+        fps: Math.round(currentFps),
+        hasNaN,
+        errors: runtimeErrors,
+        energyBounded: true
+      }, '*');
+    }, 1000);
+
+    function animate(now) {
+      requestAnimationFrame(animate);
+      const dt = Math.min((now - lastTime) / 1000, 0.05);
+      lastTime = now;
+
+      frameCount++;
+      if (now - lastFpsTime >= 500) {
+        currentFps = (frameCount * 1000) / (now - lastFpsTime);
+        frameCount = 0;
+        lastFpsTime = now;
+      }
+
+      if (!params.paused) {
+        simTime += dt;
+      }
+
+      const mode = params.experiment;
+      const k1 = (2 * Math.PI) / params.wavelength;
+      const omega = 2 * Math.PI * params.frequency;
+      const A = params.amplitude;
+      const d = params.separationOrSlit;
+
+      // Toggle experiment props
+      const isInterf = mode === 'Two-Source Interference';
+      const isDiff = mode === 'Single-Slit Diffraction';
+      const isRefract = mode === 'Refraction (Snell\'s Law)';
+
+      source1Mesh.visible = isInterf;
+      source2Mesh.visible = isInterf;
+      leftWall.visible = isDiff;
+      rightWall.visible = isDiff;
+      refractionShelf.visible = isRefract;
+
+      const s1x = -d / 2, s1z = -3.5;
+      const s2x = d / 2, s2z = -3.5;
+      if (isInterf) {
+        const bob = Math.sin(-omega * simTime) * A;
+        source1Mesh.position.set(s1x, bob + 0.25, s1z);
+        source2Mesh.position.set(s2x, bob + 0.25, s2z);
+        arrowK1.position.set(s1x, 0.85, s1z);
+        arrowK1.setDirection(new THREE.Vector3(0.25, 0, 0.968).normalize());
+        arrowK1.setLength(3.6, 0.5, 0.3);
+        arrowK2.position.set(s2x, 0.85, s2z);
+        arrowK2.setDirection(new THREE.Vector3(-0.25, 0, 0.968).normalize());
+        arrowK2.setLength(3.6, 0.5, 0.3);
+      }
+
+      const barrierZ = -1.5;
+      const slitWidth = Math.max(0.8, d * 0.65);
+      if (isDiff) {
+        leftWall.position.set(-4 - slitWidth / 2, 0.2, barrierZ);
+        rightWall.position.set(4 + slitWidth / 2, 0.2, barrierZ);
+        arrowK1.position.set(0, 0.85, -6.5);
+        arrowK1.setDirection(new THREE.Vector3(0, 0, 1));
+        arrowK1.setLength(4.0, 0.5, 0.3);
+        const spreadAngle = Math.min(0.85, params.wavelength / (slitWidth * 1.2));
+        arrowK2.position.set(0, 0.85, barrierZ + 0.3);
+        arrowK2.setDirection(new THREE.Vector3(Math.sin(spreadAngle), 0, Math.cos(spreadAngle)));
+        arrowK2.setLength(4.2, 0.5, 0.3);
+      }
+
+      const theta1 = THREE.MathUtils.degToRad(params.incidentAngleDeg);
+      const nRatio = params.refractiveIndex;
+      const sinTheta2 = Math.sin(theta1) / nRatio;
+      const theta2 = Math.asin(THREE.MathUtils.clamp(sinTheta2, -1, 1));
+
+      if (isRefract) {
+        const dir1 = new THREE.Vector3(Math.sin(theta1), 0, Math.cos(theta1));
+        const dir2 = new THREE.Vector3(Math.sin(theta2), 0, Math.cos(theta2));
+        arrowK1.position.set(-dir1.x * 4.5, 0.85, -dir1.z * 4.5);
+        arrowK1.setDirection(dir1);
+        arrowK1.setLength(4.4, 0.55, 0.35);
+
+        arrowK2.position.set(0, 0.85, 0);
+        arrowK2.setDirection(dir2);
+        arrowK2.setLength(4.4 / nRatio + 1.2, 0.55, 0.35);
+      }
+
+      // Compute Water Mesh Surface Height and Color
+      const posAttr = waterGeo.attributes.position;
+      const colAttr = waterGeo.attributes.color;
+
+      const N_HUYGENS = 9;
+
+      for (let i = 0; i < vertexCount; i++) {
+        const x = posAttr.getX(i);
+        const z = posAttr.getZ(i);
+        let eta = 0;
+
+        if (isInterf) {
+          // Softened radial distance to avoid any singularity
+          const r1 = Math.sqrt(Math.max(1.5 * 0.2, (x - s1x) * (x - s1x) + (z - s1z) * (z - s1z)));
+          const r2 = Math.sqrt(Math.max(1.5 * 0.2, (x - s2x) * (x - s2x) + (z - s2z) * (z - s2z)));
+          const atten1 = 1.8 / Math.sqrt(r1 + 1.5);
+          const atten2 = 1.8 / Math.sqrt(r2 + 1.5);
+          eta = A * (atten1 * Math.sin(k1 * r1 - omega * simTime) + atten2 * Math.sin(k1 * r2 - omega * simTime));
+        } else if (isDiff) {
+          if (z < barrierZ) {
+            // Incident plane wave + slight partial reflection near wall
+            eta = A * Math.sin(k1 * z - omega * simTime);
+          } else {
+            // Huygens-Fresnel superposition of secondary wavelets across the slit aperture
+            let sum = 0;
+            for (let h = 0; h < N_HUYGENS; h++) {
+              const sx = -slitWidth / 2 + (h / (N_HUYGENS - 1)) * slitWidth;
+              const dist = Math.sqrt(Math.max(1.5 * 0.15, (x - sx) * (x - sx) + (z - barrierZ) * (z - barrierZ)));
+              const obliquity = 0.5 * (1 + (z - barrierZ) / dist);
+              sum += (obliquity / Math.sqrt(dist + 0.8)) * Math.sin(k1 * (barrierZ + dist) - omega * simTime);
+            }
+            eta = A * (sum / N_HUYGENS) * 2.4;
+          }
+        } else if (isRefract) {
+          // Continuous phase across interface z = 0: kx1 = k1 * sin(theta1) == kx2 = k2 * sin(theta2)
+          const kx = k1 * Math.sin(theta1);
+          const kz1 = k1 * Math.cos(theta1);
+          const k2 = k1 * nRatio;
+          const kz2 = k2 * Math.cos(theta2);
+          if (z <= 0) {
+            eta = A * Math.sin(kx * x + kz1 * z - omega * simTime);
+          } else {
+            eta = (A * 0.85) * Math.sin(kx * x + kz2 * z - omega * simTime);
+          }
+        }
+
+        posAttr.setY(i, eta);
+
+        // Color crest bright cyan/white, trough deep navy
+        const norm = THREE.MathUtils.clamp((eta / (A * 1.4) + 1) * 0.5, 0, 1);
+        const r = THREE.MathUtils.lerp(0.05, 0.35, norm);
+        const g = THREE.MathUtils.lerp(0.18, 0.85, norm);
+        const b = THREE.MathUtils.lerp(0.45, 1.0, norm);
+        colAttr.setXYZ(i, r, g, b);
+      }
+
+      posAttr.needsUpdate = true;
+      colAttr.needsUpdate = true;
+      waterGeo.computeVertexNormals();
+
+      // Update HUD
+      elMode.textContent = mode;
+      elLambda.textContent = `${params.wavelength.toFixed(2)} m`;
+      elSep.textContent = `${d.toFixed(2)} m`;
+      elIndex.textContent = params.refractiveIndex.toFixed(2);
+      if (isRefract) {
+        elSnell.textContent = `${THREE.MathUtils.radToDeg(theta2).toFixed(1)}° (λ₂=${(params.wavelength / nRatio).toFixed(2)}m)`;
+      } else {
+        elSnell.textContent = 'N/A (Uniform Depth)';
+      }
+
+      controls.update();
+      renderer.render(scene, camera);
+    }
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    requestAnimationFrame(animate);
+  </script>
+</body>
+</html>

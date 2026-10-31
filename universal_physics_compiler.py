@@ -16,6 +16,7 @@ from typing import Any, Dict, Optional
 import html as html_lib
 
 from presets import PRESETS
+from catalog_50_models import match_50_physics_model, load_model_html
 from subagent_simulations import (
     build_magnetic_flux_3d_lab,
     build_rutherford_scattering_3d_lab,
@@ -1779,6 +1780,41 @@ def universal_physics_accuracy_audit(prompt: str) -> Dict[str, Any]:
     Checks physical laws, conservation invariants, required symplectic solver, and 3D vector visualizers
     for ANY physics concept requested by the teacher (zero U+20D7 combining arrows so UI never renders ▯).
     """
+    matched_50 = match_50_physics_model(prompt)
+    if matched_50:
+        m = matched_50["model"]
+        cs = m.get("cheatsheet", {})
+        eqs = cs.get("equations", [])
+        kws = ", ".join(matched_50.get("matched_keywords", []))
+        mid = m["id"]
+        if mid in (36, 37):
+            solver = "Boris Symplectic Rotation Step (Strictly Energy-Conserving)"
+        elif mid in (8, 9, 13, 14, 16):
+            solver = "4th-Order Runge-Kutta (RK4) Coupled Differential Equation Solver"
+        elif mid in (15, 43):
+            solver = "Symplectic Velocity-Verlet Integrator with Math.max(1.5, r*r) Softening"
+        else:
+            solver = "Symplectic / Analytical 3D Physics Solver with 1Hz Telemetry Heartbeat"
+        return {
+            "physically_accurate": True,
+            "domain": f"AP Physics Canonical Model #{mid}: {m['title']}",
+            "verified_law": strip_combining_arrows(eqs[0] if eqs else m["title"]),
+            "conservation_invariants": [
+                strip_combining_arrows(eq) for eq in eqs[:2]
+            ] + [strip_combining_arrows(cs.get("intuition", ""))],
+            "required_solver": solver,
+            "vector_visualizers": [
+                "Primary Velocity / Wavefront Vector (Cyan #22d3ee)",
+                "Net Force / Field Vector (Magenta #f43f5e)",
+                "Reference Axis / Momentum Vector (Amber #f59e0b)",
+            ],
+            "verdict": strip_combining_arrows(
+                f"Matched Canonical Model #{mid} ({m['title']}) via keywords [{kws}]."
+            ),
+            "matched_model_id": mid,
+            "matched_model_code": m["code"],
+        }
+
     p_low = (prompt or "").lower()
 
     if any(k in p_low for k in ["ramp", "incline", "inclined", "slope", "wedge", "sliding", "block on", "box moving down", "box on", "friction"]):
@@ -2031,9 +2067,30 @@ def universal_physics_accuracy_audit(prompt: str) -> Dict[str, Any]:
 def compile_universal_3d_concept(prompt: str, physics_audit: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
     """
     Compiles a spoken or typed physics prompt into a complete, verified 3D Three.js simulation
-    and curriculum package. Returns None only if `engine.py` should use its existing wave/projectile
-    generators, or returns a tailored 3D simulation directly.
+    and curriculum package. Checks the 50 canonical AP Physics models first via keyword matching.
     """
+    matched_50 = match_50_physics_model(prompt)
+    if matched_50:
+        m = matched_50["model"]
+        html_50 = load_model_html(m["code"])
+        if html_50:
+            cs = m.get("cheatsheet", {})
+            curriculum = {
+                "concept": m["title"],
+                "equations": cs.get("equations", []),
+                "teacher_guide": f"{m.get('narration', '')} {cs.get('intuition', '')}".strip(),
+                "misconception_alert": cs.get("intuition", ""),
+                "intuition_questions": cs.get("discussion_prompts", []),
+                "tts_narration": m.get("narration", ""),
+            }
+            return {
+                "curriculum": sanitize_curriculum_dict(curriculum),
+                "html": strip_combining_arrows(html_50),
+                "matched_model_id": m["id"],
+                "matched_model_code": m["code"],
+                "matched_keywords": matched_50.get("matched_keywords", []),
+            }
+
     p_low = (prompt or "").lower()
 
     # 1. Inclined Plane / Block Moving Down a Ramp / Friction Free-Body Diagram

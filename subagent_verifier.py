@@ -12,7 +12,10 @@ import re
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
-from google import genai
+try:
+    from google import genai
+except ImportError:
+    genai = None  # type: ignore
 
 MODEL_ARGON = "gemini-4-argon"
 

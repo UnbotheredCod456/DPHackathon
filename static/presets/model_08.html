@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Model 08 — Gyroscopic Precession and Nutation of a 3D Spinning Top</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #070b14;
+      color: #e2e8f0;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      overflow: hidden;
+      user-select: none;
+    }
+    #canvas-container { width: 100vw; height: 100vh; }
+    #hud {
+      position: fixed;
+      bottom: 20px;
+      left: 20px;
+      background: rgba(10, 16, 30, 0.88);
+      border: 1px solid rgba(56, 189, 248, 0.28);
+      border-radius: 12px;
+      padding: 16px 20px;
+      min-width: 340px;
+      backdrop-filter: blur(12px);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+      z-index: 10;
+    }
+    #hud h2 {
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: #38bdf8;
+      margin-bottom: 10px;
+      border-bottom: 1px solid rgba(56, 189, 248, 0.2);
+      padding-bottom: 6px;
+    }
+    .hud-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12.5px;
+      margin: 5px 0;
+      font-variant-numeric: tabular-nums;
+    }
+    .hud-label { color: #94a3b8; }
+    .hud-val { color: #f8fafc; font-weight: 600; font-family: 'JetBrains Mono', monospace; }
+    .legend {
+      margin-top: 10px;
+      padding-top: 8px;
+      border-top: 1px solid rgba(148, 163, 184, 0.15);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      font-size: 11.5px;
+    }
+    .legend-item { display: flex; align-items: center; gap: 6px; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  </style>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+      "lil-gui": "https://unpkg.com/lil-gui@0.19.1/dist/lil-gui.esm.min.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="canvas-container"></div>
+
+  <div id="hud">
+    <h2>Gyroscopic Precession &amp; Nutation (RK4)</h2>
+    <div class="hud-row"><span class="hud-label">Nutation Tilt θ:</span><span class="hud-val" id="val-theta">25.0 °</span></div>
+    <div class="hud-row"><span class="hud-label">Precession Rate φ̇:</span><span class="hud-val" id="val-phidot">0.00 rad/s</span></div>
+    <div class="hud-row"><span class="hud-label">Approx Ω_p = Mgl/(I₃ω_s):</span><span class="hud-val" id="val-omega-p">0.00 rad/s</span></div>
+    <div class="hud-row"><span class="hud-label">Gravitational Torque |τ|:</span><span class="hud-val" id="val-tau">0.00 N·m</span></div>
+    <div class="hud-row"><span class="hud-label">Total Energy Drift:</span><span class="hud-val" id="val-edrift">0.000 %</span></div>
+    <div class="legend">
+      <div class="legend-item"><span class="dot" style="background:#38bdf8"></span>Spin Axis / L_s</div>
+      <div class="legend-item"><span class="dot" style="background:#facc15"></span>Gravity Torque (τ = r × Mg)</div>
+      <div class="legend-item"><span class="dot" style="background:#a855f7"></span>Apex Nutation Trail</div>
+    </div>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import GUI from 'lil-gui';
+
+    const container = document.getElementById('canvas-container');
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x070b14);
+    scene.fog = new THREE.FogExp2(0x070b14, 0.022);
+
+    const camera = new THREE.PerspectiveCamera(46, window.innerWidth / window.innerHeight, 0.1, 150);
+    camera.position.set(7.5, 6.2, 8.5);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    container.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.target.set(0, 2.2, 0);
+
+    scene.add(new THREE.AmbientLight(0x94a3b8, 0.75));
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
+    dirLight.position.set(8, 16, 10);
+    dirLight.castShadow = true;
+    scene.add(dirLight);
+
+    const grid = new THREE.GridHelper(28, 28, 0x1e293b, 0x0f172a);
+    scene.add(grid);
+
+    // Pivot pedestal
+    const pedestal = new THREE.Mesh(
+      new THREE.ConeGeometry(0.45, 0.6, 24),
+      new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.7, roughness: 0.25 })
+    );
+    pedestal.position.y = 0.3;
+    scene.add(pedestal);
+
+    const pivotPos = new THREE.Vector3(0, 0.6, 0);
+
+    const params = {
+      spinRate: 42.0,
+      initialTiltDeg: 28.0,
+      nutationRelease: 0.0, // 0 = released from rest (nutates), 1 = steady precession
+      gravity: 9.81,
+      mass: 1.8,
+      comLength: 2.2,
+      showVectors: true,
+      paused: false,
+      reset: () => initTopState()
+    };
+
+    const I1 = 1.65; // Transverse moment of inertia about pivot
+    const I3 = 0.95; // Axial spin moment of inertia
+
+    // Top 3D Geometry aligned along local +Y axis from pivot (0,0,0)
+    const topRoot = new THREE.Group();
+    topRoot.position.copy(pivotPos);
+    scene.add(topRoot);
+
+    const spinMeshGroup = new THREE.Group();
+    topRoot.add(spinMeshGroup);
+
+    const stem = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.08, 0.04, 3.6, 20),
+      new THREE.MeshStandardMaterial({ color: 0xe2e8f0, metalness: 0.8, roughness: 0.2 })
+    );
+    stem.position.y = 1.8;
+    spinMeshGroup.add(stem);
+
+    // Patterned flywheel rotor
+    const rotorCanvas = document.createElement('canvas');
+    rotorCanvas.width = 256;
+    rotorCanvas.height = 256;
+    const ctx = rotorCanvas.getContext('2d');
+    for (let i = 0; i < 8; i++) {
+      ctx.fillStyle = i % 2 === 0 ? '#0ea5e9' : '#1e293b';
+      ctx.beginPath();
+      ctx.moveTo(128, 128);
+      ctx.arc(128, 128, 128, (i * Math.PI) / 4, ((i + 1) * Math.PI) / 4);
+      ctx.fill();
+    }
+    const rotorTex = new THREE.CanvasTexture(rotorCanvas);
+
+    const rotor = new THREE.Mesh(
+      new THREE.CylinderGeometry(1.55, 1.55, 0.34, 40),
+      new THREE.MeshStandardMaterial({ map: rotorTex, metalness: 0.35, roughness: 0.3 })
+    );
+    rotor.position.y = 2.2;
+    spinMeshGroup.add(rotor);
+
+    const rim = new THREE.Mesh(
+      new THREE.TorusGeometry(1.55, 0.1, 16, 48),
+      new THREE.MeshStandardMaterial({ color: 0x38bdf8, metalness: 0.6, roughness: 0.2 })
+    );
+    rim.rotation.x = Math.PI / 2;
+    rim.position.y = 2.2;
+    spinMeshGroup.add(rim);
+
+    // Arrows
+    const axisArrow = new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), pivotPos, 4.4, 0x38bdf8, 0.45, 0.26);
+    const torqueArrow = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), pivotPos, 2.2, 0xfacc15, 0.42, 0.25);
+    scene.add(axisArrow, torqueArrow);
+
+    // Nutation trail of the top's tip
+    const maxTrail = 450;
+    const trailPositions = new Float32Array(maxTrail * 3);
+    const trailGeo = new THREE.BufferGeometry();
+    trailGeo.setAttribute('position', new THREE.BufferAttribute(trailPositions, 3));
+    const trailLine = new THREE.Line(
+      trailGeo,
+      new THREE.LineBasicMaterial({ color: 0xa855f7, transparent: true, opacity: 0.85 })
+    );
+    scene.add(trailLine);
+    let trailCount = 0;
+
+    // State variables: Euler angles (theta, phi, psi) and rates (thetaDot, phiDot)
+    let state = { theta: 0.48, thetaDot: 0, phi: 0, psi: 0, pPhi: 0, pPsi: 0, E0: 0 };
+
+    function computeEnergy(theta, thetaDot) {
+      const sinT = Math.max(1e-4, Math.sin(theta));
+      const cosT = Math.cos(theta);
+      const phiDot = (state.pPhi - state.pPsi * cosT) / (I1 * sinT * sinT);
+      const keTrans = 0.5 * I1 * (thetaDot * thetaDot + phiDot * phiDot * sinT * sinT);
+      const keSpin = (state.pPsi * state.pPsi) / (2 * I3);
+      const pe = params.mass * params.gravity * params.comLength * cosT;
+      return keTrans + keSpin + pe;
+    }
+
+    function initTopState() {
+      const theta0 = THREE.MathUtils.degToRad(params.initialTiltDeg);
+      const sinT = Math.sin(theta0);
+      const cosT = Math.cos(theta0);
+      const pPsi = I3 * params.spinRate;
+      const steadyPhiDot = (params.mass * params.gravity * params.comLength) / (pPsi);
+      const phiDot0 = params.nutationRelease * steadyPhiDot;
+      const pPhi = I1 * sinT * sinT * phiDot0 + pPsi * cosT;
+
+      state = {
+        theta: theta0,
+        thetaDot: 0,
+        phi: 0,
+        psi: 0,
+        pPhi,
+        pPsi,
+        E0: 0
+      };
+      state.E0 = computeEnergy(state.theta, state.thetaDot);
+      trailCount = 0;
+      trailGeo.setDrawRange(0, 0);
+    }
+
+    function derivatives(th, thDot) {
+      const sinT = Math.max(1e-4, Math.sin(th));
+      const cosT = Math.cos(th);
+      const diffP = state.pPhi - state.pPsi * cosT;
+      const phiDot = diffP / (I1 * sinT * sinT);
+      const thDDot =
+        (diffP * diffP * cosT) / (I1 * I1 * Math.pow(sinT, 3)) -
+        (state.pPsi * diffP) / (I1 * I1 * sinT) +
+        (params.mass * params.gravity * params.comLength * sinT) / I1;
+      const psiDot = state.pPsi / I3 - phiDot * cosT;
+      return { thDot, thDDot, phiDot, psiDot };
+    }
+
+    function stepRK4(dt) {
+      const subSteps = 6;
+      const h = dt / subSteps;
+      for (let i = 0; i < subSteps; i++) {
+        const k1 = derivatives(state.theta, state.thetaDot);
+        const k2 = derivatives(state.theta + 0.5 * h * k1.thDot, state.thetaDot + 0.5 * h * k1.thDDot);
+        const k3 = derivatives(state.theta + 0.5 * h * k2.thDot, state.thetaDot + 0.5 * h * k2.thDDot);
+        const k4 = derivatives(state.theta + h * k3.thDot, state.thetaDot + h * k3.thDDot);
+
+        state.theta += (h / 6) * (k1.thDot + 2 * k2.thDot + 2 * k3.thDot + k4.thDot);
+        state.thetaDot += (h / 6) * (k1.thDDot + 2 * k2.thDDot + 2 * k3.thDDot + k4.thDDot);
+        state.phi += (h / 6) * (k1.phiDot + 2 * k2.phiDot + 2 * k3.phiDot + k4.phiDot);
+        state.psi += (h / 6) * (k1.psiDot + 2 * k2.psiDot + 2 * k3.psiDot + k4.psiDot);
+      }
+    }
+
+    const gui = new GUI({ title: 'Gyroscope Controls' });
+    gui.add(params, 'spinRate', 18, 80, 1).name('Spin Rate ω_s (rad/s)').onChange(initTopState);
+    gui.add(params, 'initialTiltDeg', 8, 55, 1).name('Initial Tilt θ₀ (°)').onChange(initTopState);
+    gui.add(params, 'nutationRelease', 0, 1, 0.05).name('0=Nutate, 1=Steady').onChange(initTopState);
+    gui.add(params, 'gravity', 2.0, 20.0, 0.2).name('Gravity g (m/s²)').onChange(initTopState);
+    gui.add(params, 'showVectors').name('Show Vector Arrows');
+    gui.add(params, 'paused').name('Pause');
+    gui.add(params, 'reset').name('↻ Reset Top');
+
+    initTopState();
+
+    let frameCount = 0;
+    let lastTelemetry = performance.now();
+    const runtimeErrors = [];
+    window.addEventListener('error', (e) => runtimeErrors.push(e.message));
+
+    let prevTime = performance.now();
+    function animate(now) {
+      requestAnimationFrame(animate);
+      frameCount++;
+      const dt = Math.min(0.03, (now - prevTime) / 1000);
+      prevTime = now;
+
+      if (!params.paused) {
+        stepRK4(dt);
+      }
+
+      const sinT = Math.sin(state.theta);
+      const cosT = Math.cos(state.theta);
+      const axisDir = new THREE.Vector3(
+        sinT * Math.sin(state.phi),
+        cosT,
+        sinT * Math.cos(state.phi)
+      ).normalize();
+
+      // Orient topRoot along axisDir
+      topRoot.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), axisDir);
+      spinMeshGroup.rotation.y = state.psi;
+
+      // Append tip position to nutation trail
+      if (!params.paused) {
+        const tipPos = pivotPos.clone().addScaledVector(axisDir, 3.6);
+        if (trailCount < maxTrail) {
+          trailPositions[trailCount * 3] = tipPos.x;
+          trailPositions[trailCount * 3 + 1] = tipPos.y;
+          trailPositions[trailCount * 3 + 2] = tipPos.z;
+          trailCount++;
+        } else {
+          trailPositions.copyWithin(0, 3);
+          trailPositions[(maxTrail - 1) * 3] = tipPos.x;
+          trailPositions[(maxTrail - 1) * 3 + 1] = tipPos.y;
+          trailPositions[(maxTrail - 1) * 3 + 2] = tipPos.z;
+        }
+        trailGeo.attributes.position.needsUpdate = true;
+        trailGeo.setDrawRange(0, trailCount);
+      }
+
+      // Compute torque vector τ = r_com × (M g)
+      const rCom = axisDir.clone().multiplyScalar(params.comLength);
+      const fg = new THREE.Vector3(0, -params.mass * params.gravity, 0);
+      const tauVec = new THREE.Vector3().crossVectors(rCom, fg);
+      const tauMag = tauVec.length();
+
+      axisArrow.visible = params.showVectors;
+      torqueArrow.visible = params.showVectors && tauMag > 0.01;
+      axisArrow.setDirection(axisDir);
+      axisArrow.setLength(4.2, 0.45, 0.25);
+
+      if (tauMag > 0.01) {
+        torqueArrow.setDirection(tauVec.clone().normalize());
+        torqueArrow.setLength(Math.min(3.5, tauMag * 0.12), 0.4, 0.24);
+      }
+
+      const d = derivatives(state.theta, state.thetaDot);
+      const approxOmegaP = (params.mass * params.gravity * params.comLength) / state.pPsi;
+      const E = computeEnergy(state.theta, state.thetaDot);
+      const eDrift = Math.abs((E - state.E0) / (Math.abs(state.E0) + 1e-6)) * 100;
+
+      document.getElementById('val-theta').textContent = `${THREE.MathUtils.radToDeg(state.theta).toFixed(1)} °`;
+      document.getElementById('val-phidot').textContent = `${d.phiDot.toFixed(2)} rad/s`;
+      document.getElementById('val-omega-p').textContent = `${approxOmegaP.toFixed(2)} rad/s`;
+      document.getElementById('val-tau').textContent = `${tauMag.toFixed(2)} N·m`;
+      document.getElementById('val-edrift').textContent = `${eDrift.toFixed(4)} %`;
+
+      controls.update();
+      renderer.render(scene, camera);
+
+      if (now - lastTelemetry >= 1000) {
+        const fps = Math.round((frameCount * 1000) / (now - lastTelemetry));
+        window.parent.postMessage({
+          type: 'physicraft_telemetry',
+          fps,
+          hasNaN: Number.isNaN(state.theta) || Number.isNaN(state.phi),
+          errors: runtimeErrors,
+          energyBounded: eDrift < 1.0
+        }, '*');
+        frameCount = 0;
+        lastTelemetry = now;
+      }
+    }
+    requestAnimationFrame(animate);
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>30. Malus's Law & Brewster's Angle: 3D EM Wave Polarization</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #070b14;
+      color: #e2e8f0;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      overflow: hidden;
+      user-select: none;
+    }
+    #canvas-container { width: 100vw; height: 100vh; }
+    #hud {
+      position: fixed;
+      bottom: 20px;
+      left: 20px;
+      background: rgba(15, 23, 42, 0.88);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(56, 189, 248, 0.28);
+      border-radius: 12px;
+      padding: 16px 20px;
+      min-width: 335px;
+      max-width: 405px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+      z-index: 10;
+    }
+    #hud h2 {
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: #38bdf8;
+      margin-bottom: 10px;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+      padding-bottom: 6px;
+    }
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12.5px;
+      margin: 5px 0;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .stat-label { color: #94a3b8; }
+    .stat-val { color: #f8fafc; font-weight: 600; }
+    .legend {
+      margin-top: 10px;
+      padding-top: 8px;
+      border-top: 1px solid rgba(148, 163, 184, 0.18);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      font-size: 11.5px;
+    }
+    .legend-item { display: flex; align-items: center; gap: 8px; color: #cbd5e1; }
+    .swatch { width: 12px; height: 4px; border-radius: 2px; }
+  </style>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+      "lil-gui": "https://unpkg.com/lil-gui@0.19.1/dist/lil-gui.esm.min.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="canvas-container"></div>
+  <div id="hud">
+    <h2>30. Malus's Law &amp; Brewster's Angle</h2>
+    <div class="stat-row"><span class="stat-label">Polarizer Angles (θ₁, θ₂):</span><span class="stat-val" id="val-angles">0.0°, 45.0°</span></div>
+    <div class="stat-row"><span class="stat-label">Relative Δθ = θ₂ - θ₁:</span><span class="stat-val" id="val-dtheta">45.0°</span></div>
+    <div class="stat-row"><span class="stat-label">Malus Intensity I₂ / I₀:</span><span class="stat-val" id="val-malus">0.250 (25.0%)</span></div>
+    <div class="stat-row"><span class="stat-label">Brewster Angle θ_B = atan(n):</span><span class="stat-val" id="val-brew">56.3°</span></div>
+    <div class="stat-row"><span class="stat-label">Fresnel Reflection (R_s / R_p):</span><span class="stat-val" id="val-fresnel">14.8% / 0.0%</span></div>
+    <div class="legend">
+      <div class="legend-item"><span class="swatch" style="background:#38bdf8"></span>Electric Field Vectors E(x, t)</div>
+      <div class="legend-item"><span class="swatch" style="background:#f43f5e"></span>Magnetic Field Vectors B(x, t)</div>
+      <div class="legend-item"><span class="swatch" style="background:#22c55e"></span>Polarizer Transmission Axis</div>
+      <div class="legend-item"><span class="swatch" style="background:#f59e0b"></span>Brewster Reflected s-Polarized Ray</div>
+    </div>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import GUI from 'lil-gui';
+
+    const container = document.getElementById('canvas-container');
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x070b14);
+    scene.fog = new THREE.FogExp2(0x070b14, 0.015);
+
+    const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 200);
+    camera.position.set(-2, 7.5, 22);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    container.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.06;
+    controls.target.set(0.5, -0.5, 0);
+
+    scene.add(new THREE.AmbientLight(0xffffff, 0.75));
+    const dirLight = new THREE.DirectionalLight(0x93c5fd, 1.2);
+    dirLight.position.set(8, 16, 12);
+    scene.add(dirLight);
+
+    const grid = new THREE.GridHelper(34, 34, 0x1e293b, 0x0f172a);
+    grid.position.y = -4.8;
+    scene.add(grid);
+
+    const params = {
+      theta1Deg: 0.0,
+      theta2Deg: 45.0,
+      useMiddlePolarizer: false,
+      thetaMidDeg: 45.0,
+      dielectricIndex: 1.50,
+      brewsterIncidenceDeg: 56.3,
+      snapToBrewster() {
+        this.brewsterIncidenceDeg = Number(THREE.MathUtils.radToDeg(Math.atan(this.dielectricIndex)).toFixed(1));
+        gui.controllersRecursive().forEach(c => c.updateDisplay());
+      },
+      paused: false,
+      reset() {
+        this.theta1Deg = 0.0;
+        this.theta2Deg = 45.0;
+        this.useMiddlePolarizer = false;
+        this.thetaMidDeg = 45.0;
+        this.dielectricIndex = 1.50;
+        this.brewsterIncidenceDeg = 56.3;
+        this.paused = false;
+        gui.controllersRecursive().forEach(c => c.updateDisplay());
+      }
+    };
+
+    const gui = new GUI({ title: "Malus's Law & Brewster Angle" });
+    gui.add(params, 'theta1Deg', -90, 90, 1).name('Polarizer 1 θ₁ (°)');
+    gui.add(params, 'useMiddlePolarizer').name('Insert Middle Filter');
+    gui.add(params, 'thetaMidDeg', -90, 90, 1).name('Middle Filter θ_m (°)');
+    gui.add(params, 'theta2Deg', -90, 90, 1).name('Analyzer 2 θ₂ (°)');
+    gui.add(params, 'dielectricIndex', 1.20, 2.40, 0.02).name('Glass Index (n)');
+    gui.add(params, 'brewsterIncidenceDeg', 10.0, 80.0, 0.5).name('Brewster θ_i (°)');
+    gui.add(params, 'snapToBrewster').name('Snap θ_i = θ_B');
+    gui.add(params, 'paused').name('Pause');
+    gui.add(params, 'reset').name('Reset');
+
+    // Optical propagation axis at y = 1.2
+    const beamY = 1.2;
+    const xStart = -10.5;
+    const xPol1 = -4.5;
+    const xPolMid = 0.0;
+    const xPol2 = 4.5;
+    const xEnd = 10.5;
+
+    const beamAxis = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(xStart, beamY, 0),
+        new THREE.Vector3(xEnd, beamY, 0)
+      ]),
+      new THREE.LineBasicMaterial({ color: 0x475569 })
+    );
+    scene.add(beamAxis);
+
+    // Helper to create a rotating polarizer disk with transmission grating & green axis arrow
+    function createPolarizerDisk(xPos) {
+      const group = new THREE.Group();
+      group.position.set(xPos, beamY, 0);
+
+      const diskGeo = new THREE.CylinderGeometry(2.3, 2.3, 0.12, 36);
+      diskGeo.rotateZ(Math.PI / 2);
+      const diskMat = new THREE.MeshPhysicalMaterial({
+        color: 0x1e293b,
+        transparent: true,
+        opacity: 0.42,
+        roughness: 0.2,
+        side: THREE.DoubleSide
+      });
+      group.add(new THREE.Mesh(diskGeo, diskMat));
+
+      const ringGeo = new THREE.RingGeometry(2.22, 2.35, 36);
+      ringGeo.rotateY(Math.PI / 2);
+      group.add(new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: 0x64748b, side: THREE.DoubleSide })));
+
+      // Transmission axis bidirectional arrows in (y, z) plane
+      const axisArrowUp = new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 0), 2.1, 0x22c55e, 0.32, 0.18);
+      const axisArrowDown = new THREE.ArrowHelper(new THREE.Vector3(0, -1, 0), new THREE.Vector3(0, 0, 0), 2.1, 0x22c55e, 0.32, 0.18);
+      group.add(axisArrowUp, axisArrowDown);
+
+      scene.add(group);
+      return group;
+    }
+
+    const pol1Group = createPolarizerDisk(xPol1);
+    const polMidGroup = createPolarizerDisk(xPolMid);
+    const pol2Group = createPolarizerDisk(xPol2);
+
+    // Create 3D E-field (cyan) and B-field (red) ArrowHelpers along the beam
+    const numArrows = 68;
+    const eArrows = [];
+    const bArrows = [];
+
+    for (let i = 0; i < numArrows; i++) {
+      const x = xStart + (i / (numArrows - 1)) * (xEnd - xStart);
+      const origin = new THREE.Vector3(x, beamY, 0);
+      const eArr = new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), origin, 1.0, 0x38bdf8, 0.18, 0.1);
+      const bArr = new THREE.ArrowHelper(new THREE.Vector3(0, 0, 1), origin, 1.0, 0xf43f5e, 0.18, 0.1);
+      scene.add(eArr, bArr);
+      eArrows.push({ arrow: eArr, x });
+      bArrows.push({ arrow: bArr, x });
+    }
+
+    // Brewster's Angle Dielectric Reflection Station at bottom (y = -3.0)
+    const brewOrigin = new THREE.Vector3(0, -3.0, 3.2);
+    const slabMesh = new THREE.Mesh(
+      new THREE.BoxGeometry(8.5, 0.6, 3.6),
+      new THREE.MeshPhysicalMaterial({
+        color: 0x38bdf8,
+        transparent: true,
+        opacity: 0.32,
+        roughness: 0.1
+      })
+    );
+    slabMesh.position.set(0, -3.3, 3.2);
+    scene.add(slabMesh);
+
+    const brewNormal = new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), brewOrigin, 2.4, 0x94a3b8, 0.22, 0.12);
+    const brewIncRay = new THREE.ArrowHelper(new THREE.Vector3(1, -1, 0), new THREE.Vector3(), 3.6, 0x38bdf8, 0.3, 0.16);
+    const brewReflRay = new THREE.ArrowHelper(new THREE.Vector3(1, 1, 0), brewOrigin, 3.6, 0xf59e0b, 0.3, 0.16);
+    const brewRefrRay = new THREE.ArrowHelper(new THREE.Vector3(1, -1, 0), brewOrigin, 2.6, 0xa855f7, 0.25, 0.14);
+    scene.add(brewNormal, brewIncRay, brewReflRay, brewRefrRay);
+
+    const elAngles = document.getElementById('val-angles');
+    const elDTheta = document.getElementById('val-dtheta');
+    const elMalus = document.getElementById('val-malus');
+    const elBrew = document.getElementById('val-brew');
+    const elFresnel = document.getElementById('val-fresnel');
+
+    let simTime = 0;
+    let lastTime = performance.now();
+    let frameCount = 0;
+    let hasNaN = false;
+
+    function updatePolarization(dt) {
+      if (!params.paused) {
+        simTime += dt * 5.0;
+      }
+
+      const th1 = THREE.MathUtils.degToRad(params.theta1Deg);
+      const thMid = THREE.MathUtils.degToRad(params.thetaMidDeg);
+      const th2 = THREE.MathUtils.degToRad(params.theta2Deg);
+
+      // Rotate polarizer disks around X axis
+      pol1Group.rotation.x = th1;
+      polMidGroup.visible = params.useMiddlePolarizer;
+      polMidGroup.rotation.x = thMid;
+      pol2Group.rotation.x = th2;
+
+      // Amplitude & Intensity calculation through polarizers
+      const E0 = 1.9;
+      // Unpolarized light entering Polarizer 1 loses 50% intensity -> I1 = 0.5 * I0
+      const E1 = E0 * Math.SQRT1_2;
+      let EMid = E1;
+      let E2 = 0;
+      let I2Ratio = 0;
+
+      if (params.useMiddlePolarizer) {
+        EMid = E1 * Math.cos(thMid - th1);
+        E2 = EMid * Math.cos(th2 - thMid);
+        I2Ratio = 0.5 * Math.pow(Math.cos(thMid - th1) * Math.cos(th2 - thMid), 2);
+      } else {
+        E2 = E1 * Math.cos(th2 - th1);
+        I2Ratio = 0.5 * Math.pow(Math.cos(th2 - th1), 2);
+      }
+
+      const k = 1.65;
+
+      for (let i = 0; i < numArrows; i++) {
+        const x = eArrows[i].x;
+        const phase = k * x - simTime;
+        const eArr = eArrows[i].arrow;
+        const bArr = bArrows[i].arrow;
+
+        let amp = 0;
+        let angle = 0;
+
+        if (x < xPol1) {
+          // Unpolarized source: superposition of orthogonal random-phase planes
+          amp = E0 * Math.sin(phase);
+          angle = (i % 2 === 0) ? (phase * 0.7) : (phase * 0.7 + Math.PI / 2);
+        } else if (x < xPolMid || !params.useMiddlePolarizer) {
+          if (x < xPol2) {
+            amp = E1 * Math.sin(phase);
+            angle = th1;
+          } else {
+            amp = E2 * Math.sin(phase);
+            angle = th2;
+          }
+        } else {
+          if (x < xPol2) {
+            amp = EMid * Math.sin(phase);
+            angle = thMid;
+          } else {
+            amp = E2 * Math.sin(phase);
+            angle = th2;
+          }
+        }
+
+        const absAmp = Math.abs(amp);
+        if (absAmp < 0.04) {
+          eArr.visible = false;
+          bArr.visible = false;
+        } else {
+          eArr.visible = true;
+          bArr.visible = true;
+          const sign = amp >= 0 ? 1 : -1;
+          const eDir = new THREE.Vector3(0, Math.cos(angle) * sign, Math.sin(angle) * sign).normalize();
+          // B = x_hat cross E
+          const bDir = new THREE.Vector3(0, -eDir.z, eDir.y).normalize();
+
+          eArr.setDirection(eDir);
+          eArr.setLength(absAmp, Math.min(0.24, absAmp * 0.35), Math.min(0.14, absAmp * 0.2));
+
+          bArr.setDirection(bDir);
+          bArr.setLength(absAmp * 0.72, Math.min(0.2, absAmp * 0.28), Math.min(0.12, absAmp * 0.16));
+        }
+      }
+
+      // Brewster's Angle & Fresnel equations
+      const n = params.dielectricIndex;
+      const thetaBrewRad = Math.atan(n);
+      const thetaIncRad = THREE.MathUtils.degToRad(params.brewsterIncidenceDeg);
+      const sinTrans = Math.sin(thetaIncRad) / n;
+      const thetaTransRad = Math.asin(Math.min(0.999, sinTrans));
+
+      const cosI = Math.cos(thetaIncRad);
+      const cosT = Math.cos(thetaTransRad);
+
+      const rs = (cosI - n * cosT) / (cosI + n * cosT);
+      const rp = (n * cosI - cosT) / (n * cosI + cosT);
+      const Rs = rs * rs;
+      const Rp = rp * rp;
+
+      // Update Brewster station rays
+      const incDir = new THREE.Vector3(Math.sin(thetaIncRad), -Math.cos(thetaIncRad), 0).normalize();
+      brewIncRay.position.copy(brewOrigin).addScaledVector(incDir, -3.4);
+      brewIncRay.setDirection(incDir);
+      brewIncRay.setLength(3.4, 0.3, 0.16);
+
+      const reflDir = new THREE.Vector3(Math.sin(thetaIncRad), Math.cos(thetaIncRad), 0).normalize();
+      brewReflRay.setDirection(reflDir);
+      const reflLen = 1.4 + 2.5 * (Rs + Rp);
+      brewReflRay.setLength(reflLen, 0.28, 0.15);
+
+      const refrDir = new THREE.Vector3(Math.sin(thetaTransRad), -Math.cos(thetaTransRad), 0).normalize();
+      brewRefrRay.setDirection(refrDir);
+
+      if (Number.isNaN(I2Ratio) || Number.isNaN(Rp)) hasNaN = true;
+
+      // Update HUD
+      elAngles.textContent = `${params.theta1Deg.toFixed(1)}°, ${params.theta2Deg.toFixed(1)}°`;
+      elDTheta.textContent = `${Math.abs(params.theta2Deg - params.theta1Deg).toFixed(1)}°`;
+      elMalus.textContent = `${I2Ratio.toFixed(3)} (${(I2Ratio * 100).toFixed(1)}%)`;
+      elBrew.textContent = `${THREE.MathUtils.radToDeg(thetaBrewRad).toFixed(1)}°`;
+      elFresnel.textContent = `${(Rs * 100).toFixed(1)}% / ${(Rp * 100).toFixed(1)}%`;
+    }
+
+    function animate(now) {
+      requestAnimationFrame(animate);
+      const dt = Math.min((now - lastTime) / 1000, 0.05);
+      lastTime = now;
+      frameCount++;
+
+      updatePolarization(dt);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+    requestAnimationFrame(animate);
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    setInterval(() => {
+      const fps = frameCount || 60;
+      frameCount = 0;
+      window.parent.postMessage({
+        type: 'physicraft_telemetry',
+        fps,
+        hasNaN,
+        errors: [],
+        energyBounded: true
+      }, '*');
+    }, 1000);
+  </script>
+</body>
+</html>

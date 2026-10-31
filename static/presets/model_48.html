@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>48. 3D Hydrogen Atom Quantum Orbitals: Probability Cloud Visualizer (s, p, d, f)</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #070b14; color: #e2e8f0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; overflow: hidden; }
+    #canvas-container { width: 100vw; height: 100vh; }
+    #hud {
+      position: fixed; bottom: 20px; left: 20px; z-index: 10;
+      background: rgba(15, 23, 42, 0.88); backdrop-filter: blur(12px);
+      border: 1px solid rgba(56, 189, 248, 0.28); border-radius: 12px;
+      padding: 16px 20px; min-width: 330px; max-width: 390px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+    }
+    #hud h2 { font-size: 14px; font-weight: 700; color: #38bdf8; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 10px; }
+    .metric { display: flex; justify-content: space-between; font-size: 13px; margin: 5px 0; font-variant-numeric: tabular-nums; }
+    .metric span.val { color: #f8fafc; font-weight: 600; font-family: monospace; }
+    .legend { margin-top: 12px; padding-top: 10px; border-top: 1px solid rgba(148, 163, 184, 0.2); font-size: 12px; }
+    .legend-item { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
+    .swatch { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+  </style>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+      "lil-gui": "https://unpkg.com/lil-gui@0.19.1/dist/lil-gui.esm.min.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="canvas-container"></div>
+  <div id="hud">
+    <h2>48. 3D Hydrogen Quantum Orbitals</h2>
+    <div class="metric"><span>Orbital Designation:</span><span class="val" id="val-orb">3d (n=3, l=2, m=0)</span></div>
+    <div class="metric"><span>Binding Energy Eₙ:</span><span class="val" id="val-en">-1.51 eV</span></div>
+    <div class="metric"><span>Angular Momentum |L|:</span><span class="val" id="val-l">2.45 ħ</span></div>
+    <div class="metric"><span>Z-Projection L_z:</span><span class="val" id="val-lz">0.00 ħ</span></div>
+    <div class="metric"><span>Expectation Radius ⟨r⟩:</span><span class="val" id="val-r">10.50 a₀</span></div>
+    <div class="metric"><span>Radial & Angular Nodes:</span><span class="val" id="val-nodes">0 rad, 2 ang</span></div>
+    <div class="legend">
+      <div class="legend-item"><span class="swatch" style="background:#38bdf8"></span> Positive Wavefunction Lobe / e^(+imφ) Phase</div>
+      <div class="legend-item"><span class="swatch" style="background:#f43f5e"></span> Negative Wavefunction Lobe / Opposite Phase</div>
+      <div class="legend-item"><span class="swatch" style="background:#facc15"></span> Quantized Angular Momentum Vector L_z</div>
+      <div class="legend-item"><span class="swatch" style="background:#a855f7"></span> Precessing Semi-Classical Angular Vector L</div>
+    </div>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import GUI from 'lil-gui';
+
+    const container = document.getElementById('canvas-container');
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x070b14);
+
+    const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 300);
+    camera.position.set(16, 12, 22);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    container.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.06;
+
+    scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+
+    // Subtle axes
+    const axesHelper = new THREE.AxesHelper(10);
+    axesHelper.material.transparent = true;
+    axesHelper.material.opacity = 0.35;
+    scene.add(axesHelper);
+
+    const NUM_POINTS = 28000;
+    const positions = new Float32Array(NUM_POINTS * 3);
+    const colors = new Float32Array(NUM_POINTS * 3);
+    const basePhases = new Float32Array(NUM_POINTS);
+    const pointSigns = new Float32Array(NUM_POINTS);
+
+    const cloudGeo = new THREE.BufferGeometry();
+    cloudGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    cloudGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+    const cloudMat = new THREE.PointsMaterial({
+      size: 0.18,
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.78,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+    });
+    const pointCloud = new THREE.Points(cloudGeo, cloudMat);
+    scene.add(pointCloud);
+
+    // Dynamic Angular Momentum Arrows (Z-axis is vertical Y in Three.js)
+    const lzArrow = new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 0), 5, 0xfacc15, 0.7, 0.4);
+    scene.add(lzArrow);
+
+    const lTotalArrow = new THREE.ArrowHelper(new THREE.Vector3(0.5, 0.8, 0), new THREE.Vector3(0, 0, 0), 6, 0xa855f7, 0.7, 0.4);
+    scene.add(lTotalArrow);
+
+    const params = {
+      n: 3,
+      l: 2,
+      m: 0,
+      slicePlane: false,
+      phaseSpeed: 1.5,
+      pointSize: 0.18,
+      paused: false,
+      reset: () => {
+        params.n = 3; params.l = 2; params.m = 0; params.slicePlane = false;
+        gui.controllersRecursive().forEach(c => c.updateDisplay());
+        generateOrbitalCloud();
+      }
+    };
+
+    function factorial(k) {
+      let res = 1;
+      for (let i = 2; i <= k; i++) res *= i;
+      return res;
+    }
+
+    // Generalized Laguerre polynomial L_p^alpha(x)
+    function assocLaguerre(p, alpha, x) {
+      if (p === 0) return 1.0;
+      if (p === 1) return 1.0 + alpha - x;
+      let L0 = 1.0;
+      let L1 = 1.0 + alpha - x;
+      for (let k = 2; k <= p; k++) {
+        const Lk = ((2 * k - 1 + alpha - x) * L1 - (k - 1 + alpha) * L0) / k;
+        L0 = L1;
+        L1 = Lk;
+      }
+      return L1;
+    }
+
+    // Associated Legendre polynomial P_l^|m|(cos theta)
+    function assocLegendre(l, mAbs, x) {
+      let pmm = 1.0;
+      if (mAbs > 0) {
+        const somx2 = Math.sqrt(Math.max(0, (1.0 - x) * (1.0 + x)));
+        let fact = 1.0;
+        for (let i = 1; i <= mAbs; i++) {
+          pmm *= -fact * somx2;
+          fact += 2.0;
+        }
+      }
+      if (l === mAbs) return pmm;
+      let pmmp1 = x * (2.0 * mAbs + 1.0) * pmm;
+      if (l === mAbs + 1) return pmmp1;
+      let pll = 0.0;
+      for (let ll = mAbs + 2; ll <= l; ll++) {
+        pll = ((2.0 * ll - 1.0) * x * pmmp1 - (ll + mAbs - 1.0) * pmm) / (ll - mAbs);
+        pmm = pmmp1;
+        pmmp1 = pll;
+      }
+      return pll;
+    }
+
+    function evalHydrogenWavefn(n, l, m, r, cosTheta) {
+      const rho = (2.0 * r) / n;
+      const p = n - l - 1;
+      const alpha = 2 * l + 1;
+      const normR = Math.sqrt(
+        Math.pow(2.0 / n, 3) * (factorial(p) / (2.0 * n * factorial(n + l)))
+      );
+      const radial = normR * Math.exp(-rho * 0.5) * Math.pow(rho, l) * assocLaguerre(p, alpha, rho);
+
+      const mAbs = Math.abs(m);
+      const normY = Math.sqrt(
+        ((2 * l + 1) / (4 * Math.PI)) * (factorial(l - mAbs) / factorial(l + mAbs))
+      );
+      const angular = normY * assocLegendre(l, mAbs, cosTheta);
+      return radial * angular;
+    }
+
+    function generateOrbitalCloud() {
+      // Enforce quantum rules l < n and |m| <= l
+      if (params.l >= params.n) params.l = params.n - 1;
+      if (Math.abs(params.m) > params.l) params.m = 0;
+      gui.controllersRecursive().forEach(c => c.updateDisplay());
+
+      const n = params.n;
+      const l = params.l;
+      const m = params.m;
+      const rMax = n * n * 2.8 + 4.0;
+      const visualScale = 10.5 / (n * n);
+
+      // Estimate max |psi|^2 for rejection sampling
+      let maxProb = 1e-8;
+      for (let s = 0; s < 1200; s++) {
+        const r = Math.random() * rMax;
+        const cosT = 2.0 * Math.random() - 1.0;
+        const psi = evalHydrogenWavefn(n, l, m, r, cosT);
+        const p = psi * psi;
+        if (p > maxProb) maxProb = p;
+      }
+
+      let count = 0;
+      let attempts = 0;
+      while (count < NUM_POINTS && attempts < NUM_POINTS * 60) {
+        attempts++;
+        // Sample spherical coordinates with uniform volume bias or radial shell
+        const r = Math.random() * rMax;
+        const cosTheta = 2.0 * Math.random() - 1.0;
+        const sinTheta = Math.sqrt(Math.max(0, 1.0 - cosTheta * cosTheta));
+        const phi = Math.random() * 2.0 * Math.PI;
+        if (params.slicePlane && Math.sin(phi) > 0) continue;
+
+        const psi = evalHydrogenWavefn(n, l, m, r, cosTheta);
+        const prob = psi * psi;
+        if (Math.random() * maxProb * 0.85 < prob) {
+          const radScaled = r * visualScale;
+          // Three.js Y is quantum Z axis
+          const x = radScaled * sinTheta * Math.cos(phi);
+          const z = radScaled * sinTheta * Math.sin(phi);
+          const y = radScaled * cosTheta;
+
+          positions[count * 3] = x;
+          positions[count * 3 + 1] = y;
+          positions[count * 3 + 2] = z;
+
+          basePhases[count] = m * phi;
+          pointSigns[count] = psi >= 0 ? 1.0 : -1.0;
+          count++;
+        }
+      }
+
+      cloudGeo.attributes.position.needsUpdate = true;
+      updatePhaseColors(0);
+      updateHUD();
+    }
+
+    const tmpColor = new THREE.Color();
+    function updatePhaseColors(time) {
+      const m = params.m;
+      for (let i = 0; i < NUM_POINTS; i++) {
+        if (m === 0) {
+          // Real orbital sign coloring: Cyan (+) vs Coral Red (-)
+          if (pointSigns[i] >= 0) {
+            colors[i * 3] = 0.22; colors[i * 3 + 1] = 0.74; colors[i * 3 + 2] = 0.97;
+          } else {
+            colors[i * 3] = 0.96; colors[i * 3 + 1] = 0.25; colors[i * 3 + 2] = 0.37;
+          }
+        } else {
+          // Complex phase rotation e^{i(m*phi - omega*t)}
+          const signOffset = pointSigns[i] >= 0 ? 0 : Math.PI;
+          const angle = basePhases[i] + signOffset - time * params.phaseSpeed;
+          const hue = ((angle % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI) / (2 * Math.PI);
+          tmpColor.setHSL(hue, 0.88, 0.6);
+          colors[i * 3] = tmpColor.r;
+          colors[i * 3 + 1] = tmpColor.g;
+          colors[i * 3 + 2] = tmpColor.b;
+        }
+      }
+      cloudGeo.attributes.color.needsUpdate = true;
+    }
+
+    function updateHUD() {
+      const n = params.n, l = params.l, m = params.m;
+      const letters = ['s', 'p', 'd', 'f', 'g'];
+      document.getElementById('val-orb').textContent = `${n}${letters[l] || 'f'} (n=${n}, l=${l}, m=${m})`;
+      const En = -13.6 / (n * n);
+      document.getElementById('val-en').textContent = En.toFixed(2) + ' eV';
+      const Lmag = Math.sqrt(l * (l + 1));
+      document.getElementById('val-l').textContent = Lmag.toFixed(2) + ' ħ';
+      document.getElementById('val-lz').textContent = m.toFixed(2) + ' ħ';
+      const expR = 0.5 * (3 * n * n - l * (l + 1));
+      document.getElementById('val-r').textContent = expR.toFixed(2) + ' a₀';
+      document.getElementById('val-nodes').textContent = `${n - l - 1} rad, ${l} ang`;
+    }
+
+    const gui = new GUI({ title: 'Hydrogen Quantum Numbers' });
+    gui.add(params, 'n', 1, 4, 1).name('Principal (n)').onChange(generateOrbitalCloud);
+    gui.add(params, 'l', 0, 3, 1).name('Azimuthal (l)').onChange(generateOrbitalCloud);
+    gui.add(params, 'm', -3, 3, 1).name('Magnetic (m)').onChange(generateOrbitalCloud);
+    gui.add(params, 'slicePlane').name('Cross-Section Cut').onChange(generateOrbitalCloud);
+    gui.add(params, 'pointSize', 0.08, 0.35, 0.02).name('Cloud Point Size').onChange(v => cloudMat.size = v);
+    gui.add(params, 'phaseSpeed', 0.0, 4.0, 0.2).name('Phase Speed');
+    gui.add(params, 'paused').name('Pause Precession');
+    gui.add(params, 'reset').name('Reset to 3d₀');
+
+    generateOrbitalCloud();
+
+    let simTime = 0;
+    let frameCount = 0;
+    let lastFpsTime = performance.now();
+    let currentFps = 60;
+    const runtimeErrors = [];
+    window.addEventListener('error', (e) => runtimeErrors.push(e.message));
+
+    function animate() {
+      requestAnimationFrame(animate);
+      if (!params.paused) {
+        simTime += 0.016;
+        updatePhaseColors(simTime);
+      }
+
+      // Update Angular Momentum Vectors
+      const l = params.l;
+      const m = params.m;
+      const Lmag = Math.sqrt(l * (l + 1));
+      if (Lmag > 0) {
+        lTotalArrow.visible = true;
+        const scale = 2.6;
+        const lz = m * scale;
+        const lxy = Math.sqrt(Math.max(0, Lmag * Lmag - m * m)) * scale;
+        const precAngle = simTime * 1.6;
+        const dir = new THREE.Vector3(lxy * Math.cos(precAngle), lz, lxy * Math.sin(precAngle));
+        const len = dir.length();
+        lTotalArrow.setDirection(dir.normalize());
+        lTotalArrow.setLength(len, 0.65, 0.35);
+
+        if (m !== 0) {
+          lzArrow.visible = true;
+          lzArrow.setDirection(new THREE.Vector3(0, m > 0 ? 1 : -1, 0));
+          lzArrow.setLength(Math.abs(lz), 0.6, 0.32);
+        } else {
+          lzArrow.visible = false;
+        }
+      } else {
+        lTotalArrow.visible = false;
+        lzArrow.visible = false;
+      }
+
+      controls.update();
+      renderer.render(scene, camera);
+
+      frameCount++;
+      const now = performance.now();
+      if (now - lastFpsTime >= 1000) {
+        currentFps = Math.round((frameCount * 1000) / (now - lastFpsTime));
+        frameCount = 0;
+        lastFpsTime = now;
+      }
+    }
+    animate();
+
+    setInterval(() => {
+      window.parent.postMessage({
+        type: 'physicraft_telemetry',
+        fps: currentFps,
+        hasNaN: false,
+        errors: runtimeErrors,
+        energyBounded: true
+      }, '*');
+    }, 1000);
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>

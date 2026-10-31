@@ -21,7 +21,10 @@ import re
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
-from google import genai
+try:
+    from google import genai
+except ImportError:
+    genai = None  # type: ignore
 
 # Deterministic Regex Patterns for Student PII & FERPA Protected Records
 PII_PATTERNS: List[Tuple[str, re.Pattern[str]]] = [

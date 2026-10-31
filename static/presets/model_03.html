@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PhysiCraft — 03. Roller Coaster Spline & Energy Conservation</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #070b14; color: #e2e8f0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; overflow: hidden; }
+  canvas { display: block; width: 100vw; height: 100vh; }
+  #hud {
+    position: fixed; left: 16px; bottom: 16px; z-index: 10;
+    background: rgba(15, 23, 42, 0.88); backdrop-filter: blur(10px);
+    border: 1px solid rgba(56, 189, 248, 0.28); border-radius: 12px;
+    padding: 14px 18px; min-width: 325px; box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+    font-size: 12.5px; line-height: 1.5;
+  }
+  #hud h3 { font-size: 13px; color: #38bdf8; letter-spacing: 0.04em; text-transform: uppercase; margin-bottom: 8px; }
+  .row { display: flex; justify-content: space-between; gap: 14px; font-variant-numeric: tabular-nums; margin-bottom: 3px; }
+  .label { color: #94a3b8; }
+  .val { color: #f8fafc; font-weight: 600; }
+  .bar-wrap { margin-top: 6px; }
+  .bar-label { display: flex; justify-content: space-between; font-size: 11px; color: #cbd5e1; margin-bottom: 2px; }
+  .bar-bg { width: 100%; height: 8px; background: rgba(30,41,59,0.9); border-radius: 4px; overflow: hidden; margin-bottom: 6px; }
+  .bar-fill { height: 100%; width: 0%; transition: width 0.04s linear; }
+  .legend { margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(148,163,184,0.18); display: flex; flex-wrap: wrap; gap: 10px; font-size: 11.5px; }
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+    "lil-gui": "https://unpkg.com/lil-gui@0.19.1/dist/lil-gui.esm.min.js"
+  }
+}
+</script>
+</head>
+<body>
+<div id="hud">
+  <h3>03 · Coaster Spline &amp; Energy Bars</h3>
+  <div class="row"><span class="label">Height y &amp; Speed v:</span><span class="val" id="hKin">0.0 m | 0.0 m/s</span></div>
+  <div class="row"><span class="label">Total Energy E_total:</span><span class="val" id="hTot">0.0 J</span></div>
+  <div class="bar-wrap">
+    <div class="bar-label"><span>Kinetic Energy (KE = ½mv²)</span><span id="bKEVal">0 J</span></div>
+    <div class="bar-bg"><div class="bar-fill" id="bKE" style="background:#22c55e"></div></div>
+    <div class="bar-label"><span>Potential Energy (PE = mgy)</span><span id="bPEVal">0 J</span></div>
+    <div class="bar-bg"><div class="bar-fill" id="bPE" style="background:#38bdf8"></div></div>
+    <div class="bar-label"><span>Thermal Loss (E_th)</span><span id="bTHVal">0 J</span></div>
+    <div class="bar-bg"><div class="bar-fill" id="bTH" style="background:#ef4444"></div></div>
+  </div>
+  <div class="legend">
+    <span><i class="dot" style="background:#22c55e"></i>Tangent v</span>
+    <span><i class="dot" style="background:#f59e0b"></i>Centripetal a_c</span>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GUI } from 'lil-gui';
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x070b14);
+
+const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 300);
+camera.position.set(22, 18, 28);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+document.body.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+controls.target.set(0, 6, 0);
+
+scene.add(new THREE.AmbientLight(0x94a3b8, 0.75));
+const dirLight = new THREE.DirectionalLight(0xffffff, 1.3);
+dirLight.position.set(20, 35, 20);
+scene.add(dirLight);
+
+scene.add(new THREE.GridHelper(60, 30, 0x1e293b, 0x111827));
+
+// Closed 3D Catmull-Rom Coaster Spline with hills and banked turns
+const controlPts = [
+  new THREE.Vector3(-14, 15.0, -8),
+  new THREE.Vector3(-5,  2.2, -11),
+  new THREE.Vector3( 6,  9.5, -9),
+  new THREE.Vector3( 14, 3.0, -2),
+  new THREE.Vector3( 12, 11.0, 9),
+  new THREE.Vector3( 2,  2.5, 12),
+  new THREE.Vector3(-9,  8.0, 10),
+  new THREE.Vector3(-15, 5.5, 1)
+];
+const curve = new THREE.CatmullRomCurve3(controlPts, true, 'centripetal', 0.5);
+const trackLen = curve.getLength();
+
+const tubeGeo = new THREE.TubeGeometry(curve, 240, 0.22, 12, true);
+const tubeMat = new THREE.MeshStandardMaterial({ color: 0x0ea5e9, metalness: 0.6, roughness: 0.25 });
+scene.add(new THREE.Mesh(tubeGeo, tubeMat));
+
+// Support pillars down to y=0
+const pillarMat = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.5, roughness: 0.5 });
+for (let i = 0; i < 24; i++) {
+  const p = curve.getPointAt(i / 24);
+  const h = p.y;
+  const cyl = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.12, h, 8), pillarMat);
+  cyl.position.set(p.x, h / 2, p.z);
+  scene.add(cyl);
+}
+
+// Coaster Cart
+const cartMesh = new THREE.Mesh(
+  new THREE.SphereGeometry(0.65, 32, 32),
+  new THREE.MeshStandardMaterial({ color: 0xf43f5e, emissive: 0xbe123c, emissiveIntensity: 0.45, roughness: 0.2 })
+);
+scene.add(cartMesh);
+
+const velArrow = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(), 3, 0x22c55e, 0.45, 0.28);
+const accArrow = new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), new THREE.Vector3(), 2, 0xf59e0b, 0.45, 0.28);
+scene.add(velArrow, accArrow);
+
+const params = {
+  mass: 2.0,
+  initialBoost: 5.5,
+  frictionDrag: 0.008,
+  gravity: 9.81,
+  paused: false,
+  reset: () => resetCoaster()
+};
+
+const state = {
+  u: 0,       // normalized arc-length parameter [0, 1)
+  speed: 5.5,
+  eTotal0: 0,
+  eThermal: 0
+};
+
+function resetCoaster() {
+  state.u = 0;
+  state.speed = params.initialBoost;
+  state.eThermal = 0;
+  const p0 = curve.getPointAt(0);
+  state.eTotal0 = 0.5 * params.mass * state.speed * state.speed + params.mass * params.gravity * p0.y;
+}
+
+const gui = new GUI({ title: 'Coaster Energy Controls' });
+gui.add(params, 'mass', 0.5, 5.0, 0.25).name('Cart Mass m (kg)').onChange(resetCoaster);
+gui.add(params, 'initialBoost', 2.0, 14.0, 0.5).name('Peak Speed v_0 (m/s)').onChange(resetCoaster);
+gui.add(params, 'frictionDrag', 0.0, 0.05, 0.002).name('Track Friction μ');
+gui.add(params, 'paused').name('Pause Simulation');
+gui.add(params, 'reset').name('Reset to Peak');
+
+resetCoaster();
+
+// Telemetry Heartbeat
+let frameCount = 0;
+let lastFpsTime = performance.now();
+let currentFps = 60;
+const runtimeErrors = [];
+window.addEventListener('error', (e) => runtimeErrors.push(e.message));
+
+setInterval(() => {
+  window.parent.postMessage({
+    type: 'physicraft_telemetry',
+    fps: Math.round(currentFps),
+    hasNaN: Number.isNaN(state.u) || Number.isNaN(state.speed),
+    errors: runtimeErrors.slice(-5),
+    energyBounded: state.eThermal >= -1e-3
+  }, '*');
+}, 1000);
+
+const clock = new THREE.Clock();
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.033);
+  frameCount++;
+  const now = performance.now();
+  if (now - lastFpsTime >= 500) {
+    currentFps = (frameCount * 1000) / (now - lastFpsTime);
+    frameCount = 0;
+    lastFpsTime = now;
+  }
+
+  if (!params.paused) {
+    const subSteps = 6;
+    const subDt = dt / subSteps;
+    for (let i = 0; i < subSteps; i++) {
+      const ds = state.speed * subDt;
+      state.u = ((state.u + ds / trackLen) % 1 + 1) % 1;
+      const pos = curve.getPointAt(state.u);
+
+      // Dissipate thermal energy along arc length
+      const dEth = params.frictionDrag * params.mass * params.gravity * Math.abs(ds) + 0.015 * params.frictionDrag * state.speed * state.speed * Math.abs(ds);
+      state.eThermal = Math.min(state.eTotal0 * 0.92, state.eThermal + dEth);
+
+      // Strictly enforce energy conservation: KE = E_total0 - PE - E_thermal
+      const pe = params.mass * params.gravity * pos.y;
+      const keAvail = state.eTotal0 - pe - state.eThermal;
+      if (keAvail > 0.05) {
+        const dirSign = state.speed >= 0 ? 1 : -1;
+        state.speed = dirSign * Math.sqrt((2 * keAvail) / params.mass);
+      } else {
+        // Turnaround on hill if insufficient kinetic energy
+        const tang = curve.getTangentAt(state.u);
+        state.speed = -Math.sign(tang.y || 1) * 0.6;
+      }
+    }
+  }
+
+  const pos = curve.getPointAt(state.u);
+  const tang = curve.getTangentAt(state.u).normalize();
+  const uNext = (state.u + 0.005) % 1;
+  const tangNext = curve.getTangentAt(uNext).normalize();
+  const curvatureVec = tangNext.sub(tang).multiplyScalar(1 / (0.005 * trackLen));
+
+  cartMesh.position.copy(pos);
+
+  // Update arrows
+  velArrow.position.copy(pos);
+  const vVec = tang.clone().multiplyScalar(state.speed);
+  if (vVec.length() > 0.1) {
+    velArrow.setDirection(vVec.clone().normalize());
+    velArrow.setLength(Math.min(4.5, 0.6 + Math.abs(state.speed) * 0.22), 0.4, 0.24);
+  }
+
+  accArrow.position.copy(pos);
+  const aCentMag = state.speed * state.speed * curvatureVec.length();
+  if (curvatureVec.length() > 0.01 && aCentMag > 0.2) {
+    accArrow.visible = true;
+    accArrow.setDirection(curvatureVec.normalize());
+    accArrow.setLength(Math.min(4.2, 0.5 + aCentMag * 0.08), 0.4, 0.24);
+  } else {
+    accArrow.visible = false;
+  }
+
+  // Update HUD & Real-time Energy Bars
+  const pe = params.mass * params.gravity * pos.y;
+  const ke = Math.max(0, state.eTotal0 - pe - state.eThermal);
+  const eTot = Math.max(1, state.eTotal0);
+
+  document.getElementById('hKin').textContent = `${pos.y.toFixed(1)} m | ${Math.abs(state.speed).toFixed(1)} m/s`;
+  document.getElementById('hTot').textContent = `${state.eTotal0.toFixed(0)} J`;
+  document.getElementById('bKEVal').textContent = `${ke.toFixed(0)} J`;
+  document.getElementById('bPEVal').textContent = `${pe.toFixed(0)} J`;
+  document.getElementById('bTHVal').textContent = `${state.eThermal.toFixed(0)} J`;
+
+  document.getElementById('bKE').style.width = `${Math.min(100, (ke / eTot) * 100)}%`;
+  document.getElementById('bPE').style.width = `${Math.min(100, (pe / eTot) * 100)}%`;
+  document.getElementById('bTH').style.width = `${Math.min(100, (state.eThermal / eTot) * 100)}%`;
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+animate();
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>36. Charged Particle in 3D Crossed E & B Fields (Boris Solver)</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #070b14; color: #e2e8f0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; overflow: hidden; }
+    canvas { display: block; width: 100vw; height: 100vh; }
+    #hud {
+      position: fixed; bottom: 16px; left: 16px; z-index: 10;
+      background: rgba(10, 16, 30, 0.88); backdrop-filter: blur(10px);
+      border: 1px solid rgba(56, 189, 248, 0.28); border-radius: 12px;
+      padding: 14px 18px; min-width: 310px; box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+      font-size: 12.5px; line-height: 1.55;
+    }
+    #hud h2 { font-size: 14px; font-weight: 700; color: #38bdf8; margin-bottom: 8px; letter-spacing: 0.3px; }
+    .row { display: flex; justify-content: space-between; gap: 16px; font-variant-numeric: tabular-nums; }
+    .lbl { color: #94a3b8; }
+    .val { color: #f8fafc; font-weight: 600; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; margin-top: 6px; }
+    .badge-ok { background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid rgba(16,185,129,0.4); }
+    .badge-warn { background: rgba(245, 158, 11, 0.2); color: #fbbf24; border: 1px solid rgba(245,158,11,0.4); }
+    .legend { margin-top: 10px; padding-top: 8px; border-top: 1px solid rgba(148,163,184,0.18); display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; font-size: 11.5px; }
+    .leg-item { display: flex; align-items: center; gap: 6px; color: #cbd5e1; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  </style>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+      "lil-gui": "https://unpkg.com/lil-gui@0.19.1/dist/lil-gui.esm.min.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="hud">
+    <h2>36. Crossed E &amp; B Fields (Boris Solver)</h2>
+    <div class="row"><span class="lbl">Speed |v|:</span><span class="val" id="vMag">0.00 m/s</span></div>
+    <div class="row"><span class="lbl">Selector Speed E/B:</span><span class="val" id="vSel">0.00 m/s</span></div>
+    <div class="row"><span class="lbl">Larmor Radius r_L:</span><span class="val" id="rLarmor">0.00 m</span></div>
+    <div class="row"><span class="lbl">Cyclotron Freq ω_c:</span><span class="val" id="omegaC">0.00 rad/s</span></div>
+    <div class="row"><span class="lbl">Kinetic Energy K:</span><span class="val" id="keVal">0.00 J</span></div>
+    <div class="row"><span class="lbl">Lorentz |F_net|:</span><span class="val" id="fNet">0.00 N</span></div>
+    <div id="modeBadge" class="badge badge-ok">Mode: Cyclotron / Helical</div>
+    <div class="legend">
+      <div class="leg-item"><span class="dot" style="background:#22c55e"></span>Velocity v</div>
+      <div class="leg-item"><span class="dot" style="background:#f97316"></span>Electric Force qE</div>
+      <div class="leg-item"><span class="dot" style="background:#a855f7"></span>Magnetic Force qv×B</div>
+      <div class="leg-item"><span class="dot" style="background:#38bdf8"></span>B Field (Uniform +Y)</div>
+    </div>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import GUI from 'lil-gui';
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x070b14);
+    scene.fog = new THREE.FogExp2(0x070b14, 0.015);
+
+    const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 200);
+    camera.position.set(16, 12, 22);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    document.body.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.06;
+
+    // Lighting
+    scene.add(new THREE.AmbientLight(0x94a3b8, 0.7));
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.3);
+    dirLight.position.set(15, 25, 20);
+    scene.add(dirLight);
+    const pointLight = new THREE.PointLight(0x38bdf8, 1.2, 40);
+    pointLight.position.set(0, 6, 0);
+    scene.add(pointLight);
+
+    // Reference Grid
+    const grid = new THREE.GridHelper(36, 36, 0x1e293b, 0x0f172a);
+    grid.position.y = -6;
+    scene.add(grid);
+
+    // Capacitor Plates for E-field (along Z axis: top/bottom along Z)
+    const plateGeo = new THREE.BoxGeometry(24, 10, 0.35);
+    const posPlateMat = new THREE.MeshPhysicalMaterial({ color: 0xef4444, transparent: true, opacity: 0.28, roughness: 0.2, metalness: 0.5 });
+    const negPlateMat = new THREE.MeshPhysicalMaterial({ color: 0x3b82f6, transparent: true, opacity: 0.28, roughness: 0.2, metalness: 0.5 });
+    const posPlate = new THREE.Mesh(plateGeo, posPlateMat);
+    const negPlate = new THREE.Mesh(plateGeo, negPlateMat);
+    posPlate.position.set(0, 0, -7);
+    negPlate.position.set(0, 0, 7);
+    scene.add(posPlate, negPlate);
+
+    // Background B-field arrows (+Y) and E-field arrows (+Z)
+    const bFieldGroup = new THREE.Group();
+    const eFieldGroup = new THREE.Group();
+    for (let x = -8; x <= 8; x += 4) {
+      for (let z = -4; z <= 4; z += 4) {
+        const bArr = new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), new THREE.Vector3(x, -4, z), 8, 0x38bdf8, 0.6, 0.35);
+        bArr.line.material.transparent = true; bArr.line.material.opacity = 0.28;
+        bArr.cone.material.transparent = true; bArr.cone.material.opacity = 0.35;
+        bFieldGroup.add(bArr);
+      }
+      for (let y = -2; y <= 2; y += 4) {
+        const eArr = new THREE.ArrowHelper(new THREE.Vector3(0, 0, 1), new THREE.Vector3(x, y, -5.5), 11, 0xf97316, 0.5, 0.3);
+        eArr.line.material.transparent = true; eArr.line.material.opacity = 0.22;
+        eArr.cone.material.transparent = true; eArr.cone.material.opacity = 0.3;
+        eFieldGroup.add(eArr);
+      }
+    }
+    scene.add(bFieldGroup, eFieldGroup);
+
+    // Charged Particle
+    const particleGeo = new THREE.SphereGeometry(0.42, 32, 32);
+    const particleMat = new THREE.MeshStandardMaterial({ color: 0xf43f5e, emissive: 0xe11d48, emissiveIntensity: 0.7, roughness: 0.2 });
+    const particleMesh = new THREE.Mesh(particleGeo, particleMat);
+    scene.add(particleMesh);
+
+    // Trail Ribbon
+    const MAX_TRAIL = 900;
+    const trailPositions = new Float32Array(MAX_TRAIL * 3);
+    const trailGeo = new THREE.BufferGeometry();
+    trailGeo.setAttribute('position', new THREE.BufferAttribute(trailPositions, 3));
+    const trailMat = new THREE.LineBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.85 });
+    const trailLine = new THREE.Line(trailGeo, trailMat);
+    scene.add(trailLine);
+    let trailCount = 0;
+
+    // Dynamic Vector Arrows
+    const vArrow = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(), 2, 0x22c55e, 0.45, 0.28);
+    const feArrow = new THREE.ArrowHelper(new THREE.Vector3(0, 0, 1), new THREE.Vector3(), 2, 0xf97316, 0.45, 0.28);
+    const fbArrow = new THREE.ArrowHelper(new THREE.Vector3(0, 0, -1), new THREE.Vector3(), 2, 0xa855f7, 0.45, 0.28);
+    scene.add(vArrow, feArrow, fbArrow);
+
+    // Simulation Parameters
+    const params = {
+      preset: 'Helical Cyclotron',
+      q: 1.0,
+      m: 1.0,
+      By: 1.5,
+      Ez: 0.0,
+      vx0: 5.0,
+      vy0: 1.2,
+      vz0: 0.0,
+      paused: false,
+      matchSelector: () => {
+        if (Math.abs(params.By) > 1e-4) {
+          params.Ez = params.vx0 * params.By;
+          params.vy0 = 0;
+          params.vz0 = 0;
+          gui.controllersRecursive().forEach(c => c.updateDisplay());
+          resetSim();
+        }
+      },
+      reset: () => resetSim()
+    };
+
+    const pos = new THREE.Vector3();
+    const vel = new THREE.Vector3();
+
+    function pushTrail(p) {
+      if (trailCount < MAX_TRAIL) {
+        trailPositions[trailCount * 3] = p.x;
+        trailPositions[trailCount * 3 + 1] = p.y;
+        trailPositions[trailCount * 3 + 2] = p.z;
+        trailCount++;
+      } else {
+        trailPositions.copyWithin(0, 3, MAX_TRAIL * 3);
+        trailPositions[(MAX_TRAIL - 1) * 3] = p.x;
+        trailPositions[(MAX_TRAIL - 1) * 3 + 1] = p.y;
+        trailPositions[(MAX_TRAIL - 1) * 3 + 2] = p.z;
+      }
+      trailGeo.setDrawRange(0, trailCount);
+      trailGeo.attributes.position.needsUpdate = true;
+    }
+
+    function resetSim() {
+      pos.set(-8, -2, 0);
+      vel.set(params.vx0, params.vy0, params.vz0);
+      trailCount = 0;
+      pushTrail(pos);
+      particleMat.color.setHex(params.q >= 0 ? 0xf43f5e : 0x38bdf8);
+      particleMat.emissive.setHex(params.q >= 0 ? 0xe11d48 : 0x0284c7);
+      eFieldGroup.visible = Math.abs(params.Ez) > 0.01;
+    }
+
+    function applyPreset(name) {
+      if (name === 'Helical Cyclotron') {
+        params.q = 1.0; params.m = 1.0; params.By = 1.6; params.Ez = 0.0;
+        params.vx0 = 5.0; params.vy0 = 1.2; params.vz0 = 0.0;
+      } else if (name === 'Velocity Selector (v = E/B)') {
+        params.q = 1.0; params.m = 1.0; params.By = 1.5; params.Ez = 7.5;
+        params.vx0 = 5.0; params.vy0 = 0.0; params.vz0 = 0.0;
+      } else if (name === 'E×B Trochoid Drift') {
+        params.q = 1.0; params.m = 1.0; params.By = 1.8; params.Ez = 4.5;
+        params.vx0 = 1.0; params.vy0 = 0.4; params.vz0 = 0.0;
+      }
+      gui.controllersRecursive().forEach(c => c.updateDisplay());
+      resetSim();
+    }
+
+    const gui = new GUI({ title: 'Crossed E & B Controls' });
+    gui.add(params, 'preset', ['Helical Cyclotron', 'Velocity Selector (v = E/B)', 'E×B Trochoid Drift']).name('Mode Preset').onChange(applyPreset);
+    gui.add(params, 'q', -2.0, 2.0, 0.1).name('Charge q (C)').onChange(resetSim);
+    gui.add(params, 'm', 0.2, 5.0, 0.1).name('Mass m (kg)').onChange(resetSim);
+    gui.add(params, 'By', -3.0, 3.0, 0.1).name('Mag Field B_y (T)').onChange(resetSim);
+    gui.add(params, 'Ez', -12.0, 12.0, 0.1).name('Elec Field E_z (V/m)').onChange(() => { eFieldGroup.visible = Math.abs(params.Ez) > 0.01; });
+    gui.add(params, 'vx0', 0.0, 10.0, 0.2).name('Init v_x (m/s)').onChange(resetSim);
+    gui.add(params, 'vy0', -4.0, 4.0, 0.2).name('Init v_y (m/s)').onChange(resetSim);
+    gui.add(params, 'matchSelector').name('Match v_x = E_z / B_y');
+    gui.add(params, 'paused').name('Pause');
+    gui.add(params, 'reset').name('Reset Particle');
+
+    resetSim();
+
+    // Boris Rotation Symplectic Integrator Step
+    function stepBoris(dt) {
+      const qm = params.q / Math.max(0.05, params.m);
+      const E = new THREE.Vector3(0, 0, params.Ez);
+      const B = new THREE.Vector3(0, params.By, 0);
+
+      // Half electric impulse: v^- = v^n + (q/m) E (dt/2)
+      const vMinus = vel.clone().addScaledVector(E, 0.5 * dt * qm);
+
+      // Magnetic rotation via Boris vectors t and s
+      const t = B.clone().multiplyScalar(0.5 * dt * qm);
+      const tMagSq = t.lengthSq();
+      const s = t.clone().multiplyScalar(2.0 / (1.0 + tMagSq));
+
+      const vPrime = vMinus.clone().add(new THREE.Vector3().crossVectors(vMinus, t));
+      const vPlus = vMinus.clone().add(new THREE.Vector3().crossVectors(vPrime, s));
+
+      // Second half electric impulse: v^{n+1} = v^+ + (q/m) E (dt/2)
+      vel.copy(vPlus).addScaledVector(E, 0.5 * dt * qm);
+      pos.addScaledVector(vel, dt);
+
+      // Wrap X/Y gently if particle leaves arena
+      if (pos.length() > 22) {
+        resetSim();
+      }
+    }
+
+    // HUD & Telemetry elements
+    const vMagEl = document.getElementById('vMag');
+    const vSelEl = document.getElementById('vSel');
+    const rLarmorEl = document.getElementById('rLarmor');
+    const omegaCEl = document.getElementById('omegaC');
+    const keValEl = document.getElementById('keVal');
+    const fNetEl = document.getElementById('fNet');
+    const modeBadge = document.getElementById('modeBadge');
+
+    let frameCount = 0;
+    let lastTeleTime = performance.now();
+    const runtimeErrors = [];
+    window.addEventListener('error', (e) => runtimeErrors.push(e.message));
+
+    function updateHUDAndVectors() {
+      particleMesh.position.copy(pos);
+
+      const speed = vel.length();
+      const vPerp = Math.hypot(vel.x, vel.z);
+      const absQB = Math.abs(params.q * params.By);
+      const rL = absQB > 1e-4 ? (params.m * vPerp) / absQB : Infinity;
+      const omegaC = absQB / params.m;
+      const ke = 0.5 * params.m * speed * speed;
+      const vSelector = Math.abs(params.By) > 1e-4 ? (params.Ez / params.By) : 0;
+
+      const E = new THREE.Vector3(0, 0, params.Ez);
+      const B = new THREE.Vector3(0, params.By, 0);
+      const Fe = E.clone().multiplyScalar(params.q);
+      const Fb = new THREE.Vector3().crossVectors(vel, B).multiplyScalar(params.q);
+      const Fnet = Fe.clone().add(Fb);
+
+      // Update arrows
+      vArrow.position.copy(pos);
+      if (speed > 0.05) {
+        vArrow.visible = true;
+        vArrow.setDirection(vel.clone().normalize());
+        vArrow.setLength(Math.min(4.0, 0.45 * speed), 0.45, 0.25);
+      } else vArrow.visible = false;
+
+      feArrow.position.copy(pos);
+      if (Fe.length() > 0.05) {
+        feArrow.visible = true;
+        feArrow.setDirection(Fe.clone().normalize());
+        feArrow.setLength(Math.min(4.0, 0.35 * Fe.length()), 0.45, 0.25);
+      } else feArrow.visible = false;
+
+      fbArrow.position.copy(pos);
+      if (Fb.length() > 0.05) {
+        fbArrow.visible = true;
+        fbArrow.setDirection(Fb.clone().normalize());
+        fbArrow.setLength(Math.min(4.0, 0.35 * Fb.length()), 0.45, 0.25);
+      } else fbArrow.visible = false;
+
+      vMagEl.textContent = `${speed.toFixed(2)} m/s`;
+      vSelEl.textContent = `${vSelector.toFixed(2)} m/s`;
+      rLarmorEl.textContent = isFinite(rL) ? `${rL.toFixed(2)} m` : '∞';
+      omegaCEl.textContent = `${omegaC.toFixed(2)} rad/s`;
+      keValEl.textContent = `${ke.toFixed(2)} J`;
+      fNetEl.textContent = `${Fnet.length().toFixed(2)} N`;
+
+      if (Math.abs(params.Ez) > 0.05 && Fnet.length() < 0.15) {
+        modeBadge.textContent = 'Velocity Selector Balanced (qE + qv×B = 0)';
+        modeBadge.className = 'badge badge-ok';
+      } else if (Math.abs(params.Ez) < 0.05) {
+        modeBadge.textContent = 'Pure Magnetic Boris Rotation (ΔK = 0)';
+        modeBadge.className = 'badge badge-ok';
+      } else {
+        modeBadge.textContent = 'Crossed E×B Cycloid / Trochoid Drift';
+        modeBadge.className = 'badge badge-warn';
+      }
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+      frameCount++;
+
+      if (!params.paused) {
+        const subSteps = 6;
+        const dt = (1 / 60) / subSteps;
+        for (let i = 0; i < subSteps; i++) {
+          stepBoris(dt);
+        }
+        pushTrail(pos);
+      }
+
+      updateHUDAndVectors();
+      controls.update();
+      renderer.render(scene, camera);
+
+      const now = performance.now();
+      if (now - lastTeleTime >= 1000) {
+        const fps = Math.round((frameCount * 1000) / (now - lastTeleTime));
+        const hasNaN = [pos.x, pos.y, pos.z, vel.x, vel.y, vel.z].some(Number.isNaN);
+        const energyBounded = vel.lengthSq() < 1e5;
+        window.parent.postMessage({
+          type: 'physicraft_telemetry',
+          fps,
+          hasNaN,
+          errors: runtimeErrors,
+          energyBounded
+        }, '*');
+        frameCount = 0;
+        lastTeleTime = now;
+      }
+    }
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    animate();
+  </script>
+</body>
+</html>

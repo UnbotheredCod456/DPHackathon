@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PhysiCraft — 01. 3D Projectile Motion with Air Drag & Wind</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #070b14; color: #e2e8f0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; overflow: hidden; }
+  canvas { display: block; width: 100vw; height: 100vh; }
+  #hud {
+    position: fixed; left: 16px; bottom: 16px; z-index: 10;
+    background: rgba(15, 23, 42, 0.86); backdrop-filter: blur(10px);
+    border: 1px solid rgba(56, 189, 248, 0.28); border-radius: 12px;
+    padding: 14px 18px; min-width: 295px; box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+    font-size: 12.5px; line-height: 1.55;
+  }
+  #hud h3 { font-size: 13px; color: #38bdf8; letter-spacing: 0.04em; text-transform: uppercase; margin-bottom: 8px; }
+  .row { display: flex; justify-content: space-between; gap: 14px; font-variant-numeric: tabular-nums; }
+  .label { color: #94a3b8; }
+  .val { color: #f8fafc; font-weight: 600; }
+  .legend { margin-top: 10px; padding-top: 8px; border-top: 1px solid rgba(148,163,184,0.18); display: flex; flex-wrap: wrap; gap: 10px; font-size: 11.5px; }
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+    "lil-gui": "https://unpkg.com/lil-gui@0.19.1/dist/lil-gui.esm.min.js"
+  }
+}
+</script>
+</head>
+<body>
+<div id="hud">
+  <h3>01 · 3D Ballistics &amp; Drag Envelope</h3>
+  <div class="row"><span class="label">Position (x, y, z):</span><span class="val" id="hPos">0.0, 0.0, 0.0 m</span></div>
+  <div class="row"><span class="label">Speed |v|:</span><span class="val" id="hSpeed">0.00 m/s</span></div>
+  <div class="row"><span class="label">Max Apex Height:</span><span class="val" id="hApex">0.00 m</span></div>
+  <div class="row"><span class="label">Horizontal Range:</span><span class="val" id="hRange">0.00 m</span></div>
+  <div class="row"><span class="label">Drag Force |F_d|:</span><span class="val" id="hDrag">0.00 N</span></div>
+  <div class="row"><span class="label">Mechanical Energy E:</span><span class="val" id="hEnergy">0.00 J</span></div>
+  <div class="legend">
+    <span><i class="dot" style="background:#22c55e"></i>Velocity v</span>
+    <span><i class="dot" style="background:#ef4444"></i>Drag F_d</span>
+    <span><i class="dot" style="background:#38bdf8"></i>Wind W</span>
+    <span><i class="dot" style="background:#f59e0b"></i>Vacuum Parabola</span>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GUI } from 'lil-gui';
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x070b14);
+scene.fog = new THREE.FogExp2(0x070b14, 0.006);
+
+const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 500);
+camera.position.set(18, 16, 36);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+document.body.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+controls.target.set(14, 4, 0);
+
+// Lights & Lab Grid
+scene.add(new THREE.AmbientLight(0x94a3b8, 0.65));
+const dirLight = new THREE.DirectionalLight(0xffffff, 1.3);
+dirLight.position.set(25, 45, 25);
+dirLight.castShadow = true;
+scene.add(dirLight);
+
+const grid = new THREE.GridHelper(100, 50, 0x1e293b, 0x111827);
+scene.add(grid);
+
+// Launch pad & target ring
+const pad = new THREE.Mesh(
+  new THREE.CylinderGeometry(1.1, 1.3, 0.3, 24),
+  new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.6, roughness: 0.3 })
+);
+pad.position.set(0, 0.15, 0);
+scene.add(pad);
+
+const impactRing = new THREE.Mesh(
+  new THREE.RingGeometry(0.45, 0.7, 32),
+  new THREE.MeshBasicMaterial({ color: 0x38bdf8, side: THREE.DoubleSide })
+);
+impactRing.rotation.x = -Math.PI / 2;
+impactRing.position.y = 0.03;
+scene.add(impactRing);
+
+// Projectile Sphere
+const projMesh = new THREE.Mesh(
+  new THREE.SphereGeometry(0.55, 32, 32),
+  new THREE.MeshStandardMaterial({ color: 0x38bdf8, emissive: 0x0284c7, emissiveIntensity: 0.4, roughness: 0.2, metalness: 0.4 })
+);
+projMesh.castShadow = true;
+scene.add(projMesh);
+
+// Dynamic Vector Arrows
+const velArrow = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(), 3, 0x22c55e, 0.5, 0.3);
+const dragArrow = new THREE.ArrowHelper(new THREE.Vector3(-1, 0, 0), new THREE.Vector3(), 2, 0xef4444, 0.45, 0.28);
+const windArrow = new THREE.ArrowHelper(new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 8, -10), 3, 0x38bdf8, 0.5, 0.3);
+scene.add(velArrow, dragArrow, windArrow);
+
+// Trajectory Lines (Actual Drag Path vs Ideal Vacuum Envelope)
+const MAX_PTS = 600;
+const actualPositions = new Float32Array(MAX_PTS * 3);
+const actualGeo = new THREE.BufferGeometry();
+actualGeo.setAttribute('position', new THREE.BufferAttribute(actualPositions, 3));
+const actualLine = new THREE.Line(actualGeo, new THREE.LineBasicMaterial({ color: 0x38bdf8, linewidth: 2 }));
+scene.add(actualLine);
+
+const vacuumGeo = new THREE.BufferGeometry();
+const vacuumLine = new THREE.Line(vacuumGeo, new THREE.LineDashedMaterial({ color: 0xf59e0b, dashSize: 0.6, gapSize: 0.35 }));
+scene.add(vacuumLine);
+
+// Parameters & State
+const params = {
+  v0: 22.0,
+  elevationDeg: 52.0,
+  azimuthDeg: 8.0,
+  mass: 1.5,
+  dragCoeff: 0.045,
+  windX: -3.0,
+  windZ: 4.5,
+  gravity: 9.81,
+  paused: false,
+  reset: () => resetSim()
+};
+
+const state = {
+  pos: new THREE.Vector3(),
+  vel: new THREE.Vector3(),
+  t: 0,
+  apex: 0,
+  range: 0,
+  ptsCount: 0,
+  initialEnergy: 1
+};
+
+function computeVacuumCurve() {
+  const elev = THREE.MathUtils.degToRad(params.elevationDeg);
+  const azim = THREE.MathUtils.degToRad(params.azimuthDeg);
+  const vx = params.v0 * Math.cos(elev) * Math.cos(azim);
+  const vy = params.v0 * Math.sin(elev);
+  const vz = params.v0 * Math.cos(elev) * Math.sin(azim);
+  const tFlight = Math.max(0.1, (2 * vy) / params.gravity);
+  const pts = [];
+  for (let i = 0; i <= 100; i++) {
+    const t = (i / 100) * tFlight;
+    pts.push(new THREE.Vector3(vx * t, Math.max(0, 0.55 + vy * t - 0.5 * params.gravity * t * t), vz * t));
+  }
+  vacuumGeo.setFromPoints(pts);
+  vacuumLine.computeLineDistances();
+}
+
+function resetSim() {
+  const elev = THREE.MathUtils.degToRad(params.elevationDeg);
+  const azim = THREE.MathUtils.degToRad(params.azimuthDeg);
+  state.pos.set(0, 0.55, 0);
+  state.vel.set(
+    params.v0 * Math.cos(elev) * Math.cos(azim),
+    params.v0 * Math.sin(elev),
+    params.v0 * Math.cos(elev) * Math.sin(azim)
+  );
+  state.t = 0;
+  state.apex = 0.55;
+  state.range = 0;
+  state.ptsCount = 1;
+  actualPositions[0] = state.pos.x;
+  actualPositions[1] = state.pos.y;
+  actualPositions[2] = state.pos.z;
+  actualGeo.setDrawRange(0, 1);
+  actualGeo.attributes.position.needsUpdate = true;
+  state.initialEnergy = 0.5 * params.mass * state.vel.lengthSq() + params.mass * params.gravity * state.pos.y;
+  computeVacuumCurve();
+}
+
+function computeAccel(vel) {
+  const wind = new THREE.Vector3(params.windX, 0, params.windZ);
+  const vRel = vel.clone().sub(wind);
+  const speedRel = vRel.length();
+  const dragForce = vRel.multiplyScalar(-params.dragCoeff * speedRel);
+  const accel = dragForce.divideScalar(params.mass);
+  accel.y -= params.gravity;
+  return { accel, dragMag: params.dragCoeff * speedRel * speedRel };
+}
+
+function stepRK4(dt) {
+  if (state.pos.y <= 0.55 && state.t > 0.08 && state.vel.y <= 0) {
+    // Auto-relaunch after short pause
+    state.t += dt;
+    if (state.t > 4.5) resetSim();
+    return 0;
+  }
+  const p0 = state.pos.clone();
+  const v0 = state.vel.clone();
+
+  const a1 = computeAccel(v0).accel;
+  const v1 = v0.clone().addScaledVector(a1, 0.5 * dt);
+  const a2 = computeAccel(v1).accel;
+  const v2 = v0.clone().addScaledVector(a2, 0.5 * dt);
+  const a3 = computeAccel(v2).accel;
+  const v3 = v0.clone().addScaledVector(a3, dt);
+  const a4 = computeAccel(v3).accel;
+
+  const dv = a1.addScaledVector(a2, 2).addScaledVector(a3, 2).add(a4).multiplyScalar(dt / 6);
+  const dp = v0.clone().addScaledVector( v1, 2 ).addScaledVector( v2, 2 ).add( v3 ).multiplyScalar(dt / 6);
+
+  state.pos.add(dp);
+  state.vel.add(dv);
+  state.t += dt;
+
+  if (state.pos.y < 0.55) {
+    state.pos.y = 0.55;
+    impactRing.position.set(state.pos.x, 0.03, state.pos.z);
+  }
+  state.apex = Math.max(state.apex, state.pos.y);
+  state.range = Math.hypot(state.pos.x, state.pos.z);
+
+  if (state.ptsCount < MAX_PTS) {
+    const idx = state.ptsCount * 3;
+    actualPositions[idx] = state.pos.x;
+    actualPositions[idx + 1] = state.pos.y;
+    actualPositions[idx + 2] = state.pos.z;
+    state.ptsCount++;
+    actualGeo.setDrawRange(0, state.ptsCount);
+    actualGeo.attributes.position.needsUpdate = true;
+  }
+}
+
+const gui = new GUI({ title: 'Projectile & Wind Controls' });
+gui.add(params, 'v0', 5, 40, 0.5).name('Launch Speed (m/s)').onChange(resetSim);
+gui.add(params, 'elevationDeg', 10, 85, 1).name('Elevation (°)').onChange(resetSim);
+gui.add(params, 'azimuthDeg', -45, 45, 1).name('Azimuth (°)').onChange(resetSim);
+gui.add(params, 'dragCoeff', 0, 0.2, 0.005).name('Quadratic Drag c').onChange(resetSim);
+gui.add(params, 'windX', -12, 12, 0.5).name('Wind X (m/s)').onChange(resetSim);
+gui.add(params, 'windZ', -12, 12, 0.5).name('Wind Z (m/s)').onChange(resetSim);
+gui.add(params, 'paused').name('Pause Simulation');
+gui.add(params, 'reset').name('Launch / Reset');
+
+resetSim();
+
+// Telemetry Heartbeat
+let frameCount = 0;
+let lastFpsTime = performance.now();
+let currentFps = 60;
+const runtimeErrors = [];
+window.addEventListener('error', (e) => runtimeErrors.push(e.message));
+
+setInterval(() => {
+  const hasNaN = Number.isNaN(state.pos.x) || Number.isNaN(state.vel.x);
+  const curE = 0.5 * params.mass * state.vel.lengthSq() + params.mass * params.gravity * state.pos.y;
+  window.parent.postMessage({
+    type: 'physicraft_telemetry',
+    fps: Math.round(currentFps),
+    hasNaN,
+    errors: runtimeErrors.slice(-5),
+    energyBounded: curE <= state.initialEnergy * 1.15 + 50
+  }, '*');
+}, 1000);
+
+const clock = new THREE.Clock();
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.033);
+  frameCount++;
+  const now = performance.now();
+  if (now - lastFpsTime >= 500) {
+    currentFps = (frameCount * 1000) / (now - lastFpsTime);
+    frameCount = 0;
+    lastFpsTime = now;
+  }
+
+  if (!params.paused) {
+    for (let i = 0; i < 3; i++) stepRK4(dt / 3);
+  }
+
+  projMesh.position.copy(state.pos);
+
+  // Update arrows
+  const speed = state.vel.length();
+  velArrow.position.copy(state.pos);
+  if (speed > 0.05) {
+    velArrow.setDirection(state.vel.clone().normalize());
+    velArrow.setLength(Math.min(5, speed * 0.16), 0.45, 0.25);
+  }
+
+  const windVec = new THREE.Vector3(params.windX, 0, params.windZ);
+  const vRel = state.vel.clone().sub(windVec);
+  const dragMag = params.dragCoeff * vRel.lengthSq();
+  dragArrow.position.copy(state.pos);
+  if (dragMag > 0.02 && vRel.length() > 0.01) {
+    dragArrow.visible = true;
+    dragArrow.setDirection(vRel.clone().negate().normalize());
+    dragArrow.setLength(Math.min(4.5, 0.6 + dragMag * 0.15), 0.4, 0.22);
+  } else {
+    dragArrow.visible = false;
+  }
+
+  if (windVec.length() > 0.1) {
+    windArrow.visible = true;
+    windArrow.setDirection(windVec.clone().normalize());
+    windArrow.setLength(Math.min(5, 1 + windVec.length() * 0.3), 0.45, 0.25);
+  } else {
+    windArrow.visible = false;
+  }
+
+  // Update HUD
+  const energy = 0.5 * params.mass * speed * speed + params.mass * params.gravity * state.pos.y;
+  document.getElementById('hPos').textContent = `${state.pos.x.toFixed(1)}, ${state.pos.y.toFixed(1)}, ${state.pos.z.toFixed(1)} m`;
+  document.getElementById('hSpeed').textContent = `${speed.toFixed(2)} m/s`;
+  document.getElementById('hApex').textContent = `${state.apex.toFixed(2)} m`;
+  document.getElementById('hRange').textContent = `${state.range.toFixed(2)} m`;
+  document.getElementById('hDrag').textContent = `${dragMag.toFixed(2)} N`;
+  document.getElementById('hEnergy').textContent = `${energy.toFixed(1)} J`;
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+animate();
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+</body>
+</html>

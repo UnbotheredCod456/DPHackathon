@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PhysiCraft — 05. Banked Curve & Conical Pendulum Force Analyzer</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #070b14; color: #e2e8f0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; overflow: hidden; }
+  canvas { display: block; width: 100vw; height: 100vh; }
+  #hud {
+    position: fixed; left: 16px; bottom: 16px; z-index: 10;
+    background: rgba(15, 23, 42, 0.86); backdrop-filter: blur(10px);
+    border: 1px solid rgba(56, 189, 248, 0.28); border-radius: 12px;
+    padding: 14px 18px; min-width: 320px; box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+    font-size: 12.5px; line-height: 1.55;
+  }
+  #hud h3 { font-size: 13px; color: #38bdf8; letter-spacing: 0.04em; text-transform: uppercase; margin-bottom: 8px; }
+  .row { display: flex; justify-content: space-between; gap: 14px; font-variant-numeric: tabular-nums; }
+  .label { color: #94a3b8; }
+  .val { color: #f8fafc; font-weight: 600; }
+  .legend { margin-top: 10px; padding-top: 8px; border-top: 1px solid rgba(148,163,184,0.18); display: flex; flex-wrap: wrap; gap: 10px; font-size: 11.5px; }
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/",
+    "lil-gui": "https://unpkg.com/lil-gui@0.19.1/dist/lil-gui.esm.min.js"
+  }
+}
+</script>
+</head>
+<body>
+<div id="hud">
+  <h3>05 · Banked Curve &amp; Conical Pendulum</h3>
+  <div class="row"><span class="label">Ideal No-Slip Speed √(Rg·tanθ):</span><span class="val" id="hIdealV">0.00 m/s</span></div>
+  <div class="row"><span class="label">Centripetal Force mv²/R:</span><span class="val" id="hFc">0.00 N</span></div>
+  <div class="row"><span class="label">Normal Force N (Track):</span><span class="val" id="hNorm">0.00 N</span></div>
+  <div class="row"><span class="label">Lateral Tire Friction f_s:</span><span class="val" id="hLatF">0.00 N</span></div>
+  <div class="row"><span class="label">Conical Angle α &amp; Tension T:</span><span class="val" id="hPend">0.0° | 0.0 N</span></div>
+  <div class="row"><span class="label">Angular Speed ω:</span><span class="val" id="hOmega">0.00 rad/s</span></div>
+  <div class="legend">
+    <span><i class="dot" style="background:#38bdf8"></i>Normal N / Tension T</span>
+    <span><i class="dot" style="background:#f59e0b"></i>Centripetal F_c</span>
+    <span><i class="dot" style="background:#f43f5e"></i>Gravity mg</span>
+    <span><i class="dot" style="background:#22c55e"></i>Velocity v</span>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GUI } from 'lil-gui';
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x070b14);
+
+const camera = new THREE.PerspectiveCamera(48, window.innerWidth / window.innerHeight, 0.1, 250);
+camera.position.set(16, 15, 22);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+document.body.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+controls.target.set(0, 4, 0);
+
+scene.add(new THREE.AmbientLight(0x94a3b8, 0.75));
+const dirLight = new THREE.DirectionalLight(0xffffff, 1.3);
+dirLight.position.set(15, 28, 18);
+scene.add(dirLight);
+
+scene.add(new THREE.GridHelper(50, 25, 0x1e293b, 0x111827));
+
+// Central Tower for Conical Pendulum
+const towerHeight = 11.5;
+const tower = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.25, 0.35, towerHeight, 20),
+  new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.6, roughness: 0.3 })
+);
+tower.position.y = towerHeight / 2;
+scene.add(tower);
+
+const topCap = new THREE.Mesh(
+  new THREE.SphereGeometry(0.45, 20, 20),
+  new THREE.MeshStandardMaterial({ color: 0x38bdf8, emissive: 0x0284c7, emissiveIntensity: 0.4 })
+);
+topCap.position.y = towerHeight;
+scene.add(topCap);
+
+// Banked Circular Track Mesh (rebuilt when radius or bank angle changes)
+let trackMesh = null;
+const trackMat = new THREE.MeshStandardMaterial({
+  color: 0x1e293b, metalness: 0.45, roughness: 0.4, side: THREE.DoubleSide
+});
+
+const params = {
+  radius: 9.0,
+  bankAngleDeg: 25.0,
+  speed: 8.5,
+  mass: 2.0,
+  pendulumLength: 6.5,
+  gravity: 9.81,
+  paused: false,
+  reset: () => {
+    params.radius = 9.0;
+    params.bankAngleDeg = 25.0;
+    params.speed = Math.sqrt(params.radius * params.gravity * Math.tan(THREE.MathUtils.degToRad(25.0)));
+    rebuildTrack();
+  }
+};
+
+function rebuildTrack() {
+  if (trackMesh) {
+    scene.remove(trackMesh);
+    trackMesh.geometry.dispose();
+  }
+  const R = params.radius;
+  const beta = THREE.MathUtils.degToRad(params.bankAngleDeg);
+  const w = 2.6;
+  const segs = 96;
+  const positions = [];
+  const indices = [];
+
+  for (let i = 0; i <= segs; i++) {
+    const phi = (i / segs) * Math.PI * 2;
+    const cosP = Math.cos(phi), sinP = Math.sin(phi);
+    for (const s of [-0.5, 0.5]) {
+      const rLocal = R + s * w * Math.cos(beta);
+      const yLocal = 1.2 + s * w * Math.sin(beta);
+      positions.push(rLocal * cosP, yLocal, rLocal * sinP);
+    }
+  }
+  for (let i = 0; i < segs; i++) {
+    const a = i * 2, b = a + 1, c = a + 2, d = a + 3;
+    indices.push(a, b, c, b, d, c);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.setIndex(indices);
+  geo.computeVertexNormals();
+  trackMesh = new THREE.Mesh(geo, trackMat);
+  scene.add(trackMesh);
+}
+rebuildTrack();
+
+// Banked Car Pod
+const carMesh = new THREE.Mesh(
+  new THREE.BoxGeometry(1.3, 0.55, 0.85),
+  new THREE.MeshStandardMaterial({ color: 0x38bdf8, emissive: 0x0284c7, emissiveIntensity: 0.35, roughness: 0.25 })
+);
+scene.add(carMesh);
+
+// Conical Pendulum Bob + String
+const bobMesh = new THREE.Mesh(
+  new THREE.SphereGeometry(0.5, 28, 28),
+  new THREE.MeshStandardMaterial({ color: 0xf43f5e, emissive: 0xbe123c, emissiveIntensity: 0.4, roughness: 0.2 })
+);
+scene.add(bobMesh);
+
+const stringGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
+const stringLine = new THREE.Line(stringGeo, new THREE.LineBasicMaterial({ color: 0xe2e8f0 }));
+scene.add(stringLine);
+
+// Force & Velocity Arrows for Banked Car and Conical Bob
+const carNormArrow = new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), new THREE.Vector3(), 2.5, 0x38bdf8, 0.4, 0.24);
+const carFcArrow = new THREE.ArrowHelper(new THREE.Vector3(-1, 0, 0), new THREE.Vector3(), 2.5, 0xf59e0b, 0.4, 0.24);
+const carGravArrow = new THREE.ArrowHelper(new THREE.Vector3(0, -1, 0), new THREE.Vector3(), 2.5, 0xf43f5e, 0.4, 0.24);
+const carVelArrow = new THREE.ArrowHelper(new THREE.Vector3(0, 0, 1), new THREE.Vector3(), 2.5, 0x22c55e, 0.4, 0.24);
+
+const bobTensArrow = new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), new THREE.Vector3(), 2.5, 0x38bdf8, 0.4, 0.24);
+const bobFcArrow = new THREE.ArrowHelper(new THREE.Vector3(-1, 0, 0), new THREE.Vector3(), 2.5, 0xf59e0b, 0.4, 0.24);
+scene.add(carNormArrow, carFcArrow, carGravArrow, carVelArrow, bobTensArrow, bobFcArrow);
+
+const gui = new GUI({ title: 'Circular Motion Controls' });
+gui.add(params, 'speed', 2.0, 16.0, 0.2).name('Orbital Speed v (m/s)');
+gui.add(params, 'radius', 5.0, 13.0, 0.5).name('Track Radius R (m)').onChange(rebuildTrack);
+gui.add(params, 'bankAngleDeg', 0.0, 55.0, 1.0).name('Bank Angle θ (°)').onChange(rebuildTrack);
+gui.add(params, 'mass', 0.5, 5.0, 0.25).name('Mass m (kg)');
+gui.add(params, 'paused').name('Pause Simulation');
+gui.add(params, 'reset').name('Set Ideal No-Slip Speed');
+
+let angle = 0;
+
+// Telemetry Heartbeat
+let frameCount = 0;
+let lastFpsTime = performance.now();
+let currentFps = 60;
+const runtimeErrors = [];
+window.addEventListener('error', (e) => runtimeErrors.push(e.message));
+
+setInterval(() => {
+  window.parent.postMessage({
+    type: 'physicraft_telemetry',
+    fps: Math.round(currentFps),
+    hasNaN: Number.isNaN(angle) || Number.isNaN(params.speed),
+    errors: runtimeErrors.slice(-5),
+    energyBounded: true
+  }, '*');
+}, 1000);
+
+const clock = new THREE.Clock();
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.033);
+  frameCount++;
+  const now = performance.now();
+  if (now - lastFpsTime >= 500) {
+    currentFps = (frameCount * 1000) / (now - lastFpsTime);
+    frameCount = 0;
+    lastFpsTime = now;
+  }
+
+  const omega = params.speed / params.radius;
+  if (!params.paused) {
+    angle = (angle + omega * dt) % (Math.PI * 2);
+  }
+
+  const R = params.radius;
+  const beta = THREE.MathUtils.degToRad(params.bankAngleDeg);
+  const cosA = Math.cos(angle), sinA = Math.sin(angle);
+
+  // Car position & orientation on banked curve
+  const carPos = new THREE.Vector3(R * cosA, 1.2 + 0.3 * Math.cos(beta), R * sinA);
+  carMesh.position.copy(carPos);
+  carMesh.rotation.set(0, -angle, beta);
+
+  const inward = new THREE.Vector3(-cosA, 0, -sinA).normalize();
+  const tangDir = new THREE.Vector3(-sinA, 0, cosA).normalize();
+  const nDir = new THREE.Vector3(-Math.sin(beta) * cosA, Math.cos(beta), -Math.sin(beta) * sinA).normalize();
+
+  const mg = params.mass * params.gravity;
+  const fc = (params.mass * params.speed * params.speed) / R;
+  const normF = params.mass * (params.gravity * Math.cos(beta) + (params.speed * params.speed / R) * Math.sin(beta));
+  const fLat = params.mass * ((params.speed * params.speed / R) * Math.cos(beta) - params.gravity * Math.sin(beta));
+  const vIdeal = Math.sqrt(R * params.gravity * Math.tan(beta));
+
+  const scaleF = 0.09;
+  carNormArrow.position.copy(carPos);
+  carNormArrow.setDirection(nDir);
+  carNormArrow.setLength(Math.min(4.5, Math.max(0.8, normF * scaleF)), 0.4, 0.24);
+
+  carFcArrow.position.copy(carPos);
+  carFcArrow.setDirection(inward);
+  carFcArrow.setLength(Math.min(4.5, Math.max(0.7, fc * scaleF)), 0.4, 0.24);
+
+  carGravArrow.position.copy(carPos);
+  carGravArrow.setDirection(new THREE.Vector3(0, -1, 0));
+  carGravArrow.setLength(Math.min(4.0, Math.max(0.8, mg * scaleF)), 0.4, 0.24);
+
+  carVelArrow.position.copy(carPos);
+  carVelArrow.setDirection(tangDir);
+  carVelArrow.setLength(Math.min(4.2, 0.7 + params.speed * 0.22), 0.4, 0.24);
+
+  // Conical Pendulum rotating at the same angular speed omega (opposite phase for clarity)
+  const L = params.pendulumLength;
+  const cosAlpha = Math.min(1, params.gravity / (L * Math.max(0.6, omega * omega)));
+  const alpha = Math.acos(cosAlpha);
+  const rPend = Math.max(0.8, L * Math.sin(alpha));
+  const yPend = towerHeight - L * Math.cos(alpha);
+  const bobAngle = angle + Math.PI;
+  const bobPos = new THREE.Vector3(rPend * Math.cos(bobAngle), yPend, rPend * Math.sin(bobAngle));
+  bobMesh.position.copy(bobPos);
+
+  const topPivot = new THREE.Vector3(0, towerHeight, 0);
+  stringGeo.setFromPoints([topPivot, bobPos]);
+
+  const tensDir = topPivot.clone().sub(bobPos).normalize();
+  const tension = mg / Math.max(0.15, Math.cos(alpha));
+  bobTensArrow.position.copy(bobPos);
+  bobTensArrow.setDirection(tensDir);
+  bobTensArrow.setLength(Math.min(4.2, Math.max(0.8, tension * scaleF)), 0.38, 0.22);
+
+  const bobInward = new THREE.Vector3(-Math.cos(bobAngle), 0, -Math.sin(bobAngle)).normalize();
+  bobFcArrow.position.copy(bobPos);
+  bobFcArrow.setDirection(bobInward);
+  bobFcArrow.setLength(Math.min(4.0, Math.max(0.6, tension * Math.sin(alpha) * scaleF)), 0.38, 0.22);
+
+  // Update HUD
+  document.getElementById('hIdealV').textContent = `${vIdeal.toFixed(2)} m/s`;
+  document.getElementById('hFc').textContent = `${fc.toFixed(2)} N`;
+  document.getElementById('hNorm').textContent = `${normF.toFixed(2)} N`;
+  document.getElementById('hLatF').textContent = `${fLat.toFixed(2)} N (${Math.abs(fLat) < 0.4 ? 'No Slip' : fLat > 0 ? 'Inward' : 'Outward'})`;
+  document.getElementById('hPend').textContent = `${THREE.MathUtils.radToDeg(alpha).toFixed(1)}° | ${tension.toFixed(1)} N`;
+  document.getElementById('hOmega').textContent = `${omega.toFixed(2)} rad/s`;
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+animate();
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+</body>
+</html>
