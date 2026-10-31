@@ -268,6 +268,11 @@
         </svg>
         <span>Voice Launchpad</span>
       </button>
+
+      <!-- 50-Experiment Database Catalog Pill -->
+      <button onclick="openCatalogModal()" class="px-3 py-1 rounded-full theme-pill text-xs font-medium flex items-center gap-1.5 text-theme-primary hover:text-accent">
+        <span>📚 50 Models</span>
+      </button>
     </div>
 
     <!-- Center: 4 Hero Physics Labs (Segmented Pill Switcher) -->
@@ -430,8 +435,17 @@
 
       <!-- UNIFIED COMPOSER BAR (Voice or Text Concept Input + Stateful Refinement) -->
       <div class="p-4 border-t shrink-0" style="background-color: var(--bg-composer); border-color: var(--border-subtle);">
+        <!-- Live 50-Experiment Keyword & Parameter Listener Banner -->
+        <div id="live-match-banner" class="hidden mb-2 px-3 py-1.5 rounded-xl theme-accent-card text-[11px] flex items-center justify-between gap-2">
+          <div class="truncate">
+            <span class="font-semibold text-accent">DB Match:</span>
+            <span id="live-match-title" class="text-theme-primary font-medium ml-1"></span>
+            <span id="live-match-params" class="text-accent mono ml-1"></span>
+          </div>
+          <button id="live-match-load-btn" class="px-2 py-0.5 rounded-full btn-accent text-[10px] font-medium shrink-0">Load</button>
+        </div>
         <div class="rounded-2xl theme-card p-2.5 transition" style="border-color: var(--border-strong);">
-          <textarea id="prompt-input" rows="2" class="w-full bg-transparent text-[12.5px] text-theme-primary leading-relaxed resize-none focus:outline-none select-text placeholder-[#86868B]" placeholder="Describe any 3D physics concept (e.g. box on a ramp, Hooke's spring, Snell's law, collisions) or refine this scene..."></textarea>
+          <textarea id="prompt-input" rows="2" oninput="handleLivePromptMatch(this.value)" class="w-full bg-transparent text-[12.5px] text-theme-primary leading-relaxed resize-none focus:outline-none select-text placeholder-[#86868B]" placeholder="Describe any 3D physics concept (e.g. box on a ramp at 35°, Doppler Mach cone, Stern-Gerlach) or refine this scene..."></textarea>
           <input id="followup-input" type="hidden" value="" />
 
           <div class="flex items-center justify-between pt-2 mt-1 border-t" style="border-color: var(--border-subtle);">
@@ -650,7 +664,145 @@
     </div>
   </div>
 
+  <!-- MODAL 3: 50-EXPERIMENT 3D PHYSICS DATABASE CATALOG -->
+  <div id="catalog-modal" class="hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-xl flex items-center justify-center p-4">
+    <div class="rounded-3xl max-w-4xl w-full max-h-[85vh] flex flex-col p-6 shadow-2xl border" style="background-color: var(--bg-modal); border-color: var(--border-strong);">
+      <div class="flex items-center justify-between mb-3 shrink-0">
+        <div>
+          <h3 class="text-lg font-semibold text-theme-primary">50-Experiment 3D Physics Database</h3>
+          <p class="text-xs text-theme-secondary">Click any experiment to launch its interactive 3D simulation, or speak/type custom parameters (e.g., angle, mass, friction, magnetic field).</p>
+        </div>
+        <button onclick="closeCatalogModal()" class="w-8 h-8 rounded-full theme-pill text-sm flex items-center justify-center">&times;</button>
+      </div>
+      <div class="mb-3 shrink-0">
+        <input id="catalog-search" type="text" oninput="filterCatalog(this.value)" class="w-full rounded-xl theme-eq-box px-3.5 py-2 text-xs text-theme-primary focus:border-[#1890FF] focus:outline-none select-text" placeholder="Search 50 3D models by keyword (e.g. Doppler, Stern-Gerlach, Lagrange, Bernoulli, Michelson, Gyroscope)..." />
+      </div>
+      <div id="catalog-grid" class="flex-1 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 gap-2.5 pr-1"></div>
+    </div>
+  </div>
+
   <script>
+    let allExperimentsCatalog = [];
+    let matchDebounceTimer = null;
+
+    async function ensureCatalogLoaded() {
+      if (allExperimentsCatalog.length > 0) return allExperimentsCatalog;
+      try {
+        const res = await fetch('/api/experiments');
+        const data = await res.json();
+        allExperimentsCatalog = data.experiments || [];
+      } catch (e) {
+        allExperimentsCatalog = [];
+      }
+      return allExperimentsCatalog;
+    }
+
+    async function openCatalogModal() {
+      const modal = document.getElementById('catalog-modal');
+      if (modal) modal.classList.remove('hidden');
+      await ensureCatalogLoaded();
+      filterCatalog(document.getElementById('catalog-search')?.value || '');
+    }
+
+    function closeCatalogModal() {
+      const modal = document.getElementById('catalog-modal');
+      if (modal) modal.classList.add('hidden');
+    }
+
+    function filterCatalog(query) {
+      const grid = document.getElementById('catalog-grid');
+      if (!grid) return;
+      const q = (query || '').trim().toLowerCase();
+      const filtered = allExperimentsCatalog.filter(exp => {
+        if (!q) return true;
+        return (
+          String(exp.id) === q ||
+          (exp.title || '').toLowerCase().includes(q) ||
+          (exp.category || '').toLowerCase().includes(q) ||
+          (exp.keywords || []).some(k => k.toLowerCase().includes(q))
+        );
+      });
+      grid.innerHTML = filtered.map(exp => `
+        <div onclick="loadDatabaseExperiment(${exp.id})" class="p-3.5 rounded-2xl theme-card hover:border-[#1890FF]/50 cursor-pointer transition flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between gap-2 mb-1">
+              <span class="px-2 py-0.5 rounded-full bg-[#1890FF]/15 text-accent text-[10px] font-semibold">#${exp.id}</span>
+              <span class="text-[10.5px] text-theme-secondary truncate">${exp.category}</span>
+            </div>
+            <div class="text-xs font-semibold text-theme-primary leading-snug">${exp.title}</div>
+          </div>
+          <div class="mt-2 flex flex-wrap gap-1">
+            ${(exp.keywords || []).slice(0, 3).map(k => `<span class="px-2 py-0.5 rounded-full theme-pill text-[10px] text-theme-secondary">${k}</span>`).join('')}
+          </div>
+        </div>
+      `).join('');
+    }
+
+    async function loadDatabaseExperiment(expId, customPrompt = '') {
+      closeCatalogModal();
+      hideVoiceHeroLaunchpad();
+      const overlay = document.getElementById('loading-overlay');
+      const stepTxt = document.getElementById('loading-step');
+      const bar = document.getElementById('loading-bar');
+      if (overlay) overlay.classList.remove('hidden');
+      if (stepTxt) stepTxt.textContent = `Loading Experiment #${expId} from 3D Physics Database...`;
+      if (bar) bar.style.width = '80%';
+      try {
+        const qParam = customPrompt ? `?prompt=${encodeURIComponent(customPrompt)}` : '';
+        const res = await fetch(`/api/experiments/${expId}${qParam}`);
+        const data = await res.json();
+        if (res.ok && data.html) {
+          currentInteractionId = data.interaction_id;
+          document.getElementById('session-badge').textContent = `DB #${expId}`;
+          document.querySelectorAll('.preset-pill').forEach(btn => btn.classList.remove('active-preset'));
+          if (data.physics_accuracy_check) renderPhysicsAccuracyAudit(data.physics_accuracy_check);
+          if (data.curriculum) {
+            currentCurriculum = data.curriculum;
+            discussedQuestions = {};
+            renderCurriculum(data.curriculum, data.domain);
+          }
+          injectSimulationHtml(data.html);
+        }
+      } catch (e) {
+        console.error('Failed to load DB experiment:', e);
+      } finally {
+        if (overlay) overlay.classList.add('hidden');
+      }
+    }
+
+    function handleLivePromptMatch(text) {
+      clearTimeout(matchDebounceTimer);
+      const banner = document.getElementById('live-match-banner');
+      if (!text || text.trim().length < 3) {
+        if (banner) banner.classList.add('hidden');
+        return;
+      }
+      matchDebounceTimer = setTimeout(async () => {
+        try {
+          const res = await fetch(`/api/experiments/match?q=${encodeURIComponent(text)}`);
+          const data = await res.json();
+          if (data.matched && data.experiment_id) {
+            if (banner) banner.classList.remove('hidden');
+            const titleEl = document.getElementById('live-match-title');
+            const paramsEl = document.getElementById('live-match-params');
+            const loadBtn = document.getElementById('live-match-load-btn');
+            if (titleEl) titleEl.textContent = `#${data.experiment_id} ${data.title}`;
+            const ov = data.parameter_overrides || {};
+            const ovKeys = Object.keys(ov);
+            if (paramsEl) {
+              paramsEl.textContent = ovKeys.length > 0
+                ? `[${ovKeys.map(k => `${k}=${ov[k]}`).join(', ')}]`
+                : '';
+            }
+            if (loadBtn) {
+              loadBtn.onclick = () => loadDatabaseExperiment(data.experiment_id, text);
+            }
+          } else if (banner) {
+            banner.classList.add('hidden');
+          }
+        } catch (e) {}
+      }, 180);
+    }
     let presetsData = {};
     let currentPresetId = 'lorentz';
     let currentHtml = '';

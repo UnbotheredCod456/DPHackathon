@@ -31,6 +31,11 @@ from engine import (
     verify_and_instrument_3d_html,
 )
 from presets import PRESETS
+from physics_database import (
+    build_experiment_by_id,
+    get_all_50_experiments_catalog,
+    match_experiment_from_prompt,
+)
 
 load_dotenv()
 
@@ -154,6 +159,55 @@ async def api_presets():
     return {"presets": PRESETS}
 
 
+@app.get("/api/experiments")
+async def api_experiments():
+    """Returns the full 50-Experiment 3D Physics Database catalog."""
+    catalog = get_all_50_experiments_catalog()
+    return {"count": len(catalog), "experiments": catalog}
+
+
+@app.get("/api/experiments/match")
+async def api_match_experiment(q: str = ""):
+    """Live keyword & parameter matcher against the 50-Experiment Database."""
+    exp_id, score, matched_kw, overrides = match_experiment_from_prompt(q)
+    catalog = get_all_50_experiments_catalog()
+    meta = catalog[exp_id - 1] if 1 <= exp_id <= len(catalog) else None
+    return {
+        "matched": bool(exp_id and score > 0),
+        "experiment_id": exp_id,
+        "matched_experiment_id": exp_id,
+        "title": meta["title"] if meta else "",
+        "category": meta["category"] if meta else "",
+        "confidence": score,
+        "experiment": meta,
+        "matched_keywords": matched_kw,
+        "parameter_overrides": overrides,
+    }
+
+
+@app.get("/api/experiments/{exp_id}")
+async def api_get_experiment(exp_id: int, prompt: str = ""):
+    """Loads any of the 50 3D Physics Database models directly by ID (1..50), applying optional spoken parameter overrides."""
+    exp_data = build_experiment_by_id(exp_id, custom_prompt=prompt)
+    if not exp_data:
+        raise HTTPException(status_code=404, detail=f"Experiment #{exp_id} not found in 50-Experiment Database.")
+    patched_html, verification = verify_and_instrument_3d_html(exp_data["html"])
+    iid = f"db-exp{exp_id}-{uuid.uuid4().hex[:6]}"
+    return {
+        "status": "ok",
+        "experiment_id": exp_id,
+        "title": exp_data.get("title"),
+        "domain": exp_data.get("domain"),
+        "matched_keywords": exp_data.get("matched_keywords", []),
+        "parameter_overrides": exp_data.get("parameter_overrides", {}),
+        "interaction_id": iid,
+        "physics_accuracy_check": exp_data.get("physics_audit"),
+        "curriculum": exp_data.get("curriculum"),
+        "html": patched_html,
+        "verification": verification,
+    }
+
+
 @app.post("/api/generate")
 async def api_generate(req: GenerateRequest):
     t_start = time.perf_counter()
@@ -186,6 +240,9 @@ async def api_generate(req: GenerateRequest):
 
     total_ms = round((time.perf_counter() - t_start) * 1000)
     verification = argon_res.get("verification", {})
+    exp_id, match_score, matched_kw, param_overrides = match_experiment_from_prompt(req.prompt)
+    catalog = get_all_50_experiments_catalog()
+    matched_meta = catalog[exp_id - 1] if 1 <= exp_id <= len(catalog) else None
     return {
         "status": "ok",
         "total_latency_ms": total_ms,
@@ -193,6 +250,10 @@ async def api_generate(req: GenerateRequest):
         "interaction_id": argon_res.get("interaction_id"),
         "central_interaction_id": central_res.get("interaction_id"),
         "previous_interaction_id": req.previous_interaction_id,
+        "matched_experiment_id": argon_res.get("experiment_id") or (exp_id if match_score >= 6.0 else None),
+        "matched_experiment_title": matched_meta["title"] if matched_meta and match_score >= 6.0 else None,
+        "matched_keywords": argon_res.get("matched_keywords") or matched_kw,
+        "parameter_overrides": argon_res.get("parameter_overrides") or param_overrides,
         "physics_accuracy_check": physics_check,
         "html": argon_res.get("html"),
         "curriculum": curriculum_res.get("curriculum"),

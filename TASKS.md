@@ -52,12 +52,16 @@ Then open **http://127.0.0.1:8000**.
 ## 🎨 Track B Checklist (Collaborator `pageni`): 3D Presets, UI UX & Live Pitch
 **Files**: `presets.py`, `static/index.html`, `README.md`
 
-- [ ] **Add Hero Preset #4 in `presets.py`**:
-  - Add a `"waves"` (3D Two-Source Ripple Tank Wave Interference) or `"rutherford"` (3D Alpha Particle Coulomb Scattering) entry to the `PRESETS` dictionary in `presets.py` and add its quick-select button in `static/index.html`.
-  - Keep the `window.parent.postMessage({ type: "physicraft_telemetry", ... }, "*")` heartbeat inside `animate()` so the green verification badge stays active!
-- [ ] **Add "Projection / Student Mode" Toggle in `static/index.html`**:
-  - Add a toggle button in the left panel that hides the Teacher Cheatsheet & reveals interactive multiple-choice or expandable hints for the 3 Student Intuition Questions so Sarah can project the screen to her class.
-- [ ] **Visual Architecture Diagram Modal in `static/index.html`**:
-  - Add an interactive "Architecture" modal showing how `gemini-4-argon` orchestrates `gemini-3.8-flash`, `gemini-3.5-flash-lite`, `gemini-3.5-transcribe`, and `gemini-3.8-flash-tts` so we can show judges the system pipeline in one click.
+- [x] **Add Hero Preset #4 in `presets.py`**:
+  - Added `"waves"` (3D Two-Source Ripple Tank Wave Interference) entry to `PRESETS` in `presets.py` and added quick-select Hero Demo pills in `static/index.html`.
+  - Kept the `window.parent.postMessage({ type: "physicraft_telemetry", ... }, "*")` heartbeat inside `animate()` so the green verification badge stays active!
+- [x] **Add "Projection / Student Mode" Toggle in `static/index.html`**:
+  - Added `👨‍🎓 Student Mode` toggle button in the left panel that hides the Teacher Cheatsheet & reveals interactive expandable hints for the 3 Student Intuition Questions so Sarah can project the screen to her class.
+- [x] **Visual Architecture Diagram Modal in `static/index.html`**:
+  - Added an interactive `🏗️ Architecture` modal showing how `gemini-4-argon` orchestrates `gemini-3.8-flash`, `gemini-3.5-flash-lite`, `gemini-3.5-transcribe`, and `gemini-3.8-flash-tts` so we can show judges the system pipeline in one click.
+- [x] **50-Experiment 3D Physics Database & Natural-Language Keyword/Parameter Listener**:
+  - Built all **50 interactive 3D Three.js physics models** (`physics_database.py`, `db_mechanics_oscillations.py`, `db_thermo_fluids_waves_optics.py`, `db_em_relativity_quantum.py`) across Mechanics, Rotational Dynamics, Oscillations/Chaos/Gravitation, Thermodynamics/Fluids, Waves/Optics, E&M/Circuits, and Relativity/Quantum/Nuclear Physics.
+  - Added natural-language keyword matching (`/api/experiments/match`) and automatic slider parameter configuration (`physicraft-db-parameter-listener`) for spoken teacher constraints (angle, mass, friction, gravity, magnetic field, velocity, wavelength, temperature, spring constant, quantum state, charge sign).
+  - Added `📚 Browse All 50 3D Physics Models` searchable catalog modal (`#catalog-modal`) in `static/index.html`.
 - [ ] **90-Second Backup Video & 3-Minute Pitch Rehearsal**:
   - Record a safety screen capture of the 3D presets, voice generation, self-heal loop, and Google Classroom approval gate.

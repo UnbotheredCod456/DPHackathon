@@ -12,17 +12,23 @@ from fastapi.testclient import TestClient
 
 import app as fastapi_app
 from engine import synthesize_parametric_3d_lab, verify_and_instrument_3d_html
+from physics_database import (
+    build_experiment_by_id,
+    get_all_50_experiments_catalog,
+    match_experiment_from_prompt,
+)
 from presets import PRESETS
 
 
 def test_presets_verification():
+    assert len(PRESETS) == 4, f"Expected 4 Hero Presets (lorentz, kepler, chaos, waves), got {len(PRESETS)}"
     for key, preset in PRESETS.items():
         patched, report = verify_and_instrument_3d_html(preset["html"])
         assert report["passed"], f"Preset {key} failed verification: {report['issues']}"
         assert report["slider_count"] >= 3, f"Preset {key} should have >= 3 sliders"
         assert report["has_orbit_controls"], f"Preset {key} missing OrbitControls"
         assert "physicraft_telemetry" in patched, f"Preset {key} missing telemetry heartbeat"
-    print("✓ All 3 Hero Presets passed static AST & numerical physics verification!")
+    print("✓ All 4 Hero Presets (Lorentz, Kepler, Chaos, Waves) passed static AST & numerical physics verification!")
 
 
 def test_auto_instrumentation():
@@ -228,6 +234,66 @@ def test_universal_physics_concepts_and_zero_missing_glyphs():
     print("✓ Universal Physics Compiler (Ramp/FBD, Spring SHM, Collisions, Torque, Optics, Ideal Gas, Custom) & Zero U+20D7 verified!")
 
 
+def test_all_50_physics_database_experiments_and_parameter_listener():
+    client = TestClient(fastapi_app.app)
+
+    # 1. Verify /api/experiments returns all 50 catalog items
+    cat_res = client.get("/api/experiments")
+    assert cat_res.status_code == 200
+    cat_data = cat_res.json()
+    assert cat_data["count"] == 50, f"Expected 50 experiments, got {cat_data['count']}"
+    assert len(cat_data["experiments"]) == 50
+
+    # 2. Verify all 50 experiments build, pass AST verification, have >= 4 sliders, OrbitControls, ArrowHelper, and zero U+20D7
+    for exp_id in range(1, 51):
+        exp = build_experiment_by_id(exp_id, custom_prompt=f"Experiment #{exp_id} at 42 degrees and mass 7.5 kg")
+        patched, report = verify_and_instrument_3d_html(exp["html"])
+        assert report["passed"], f"Experiment #{exp_id} ({exp['title']}) failed AST verification: {report['issues']}"
+        assert report["slider_count"] >= 4, f"Experiment #{exp_id} has < 4 sliders: {report['slider_count']}"
+        assert report["has_orbit_controls"], f"Experiment #{exp_id} missing OrbitControls"
+        assert "ArrowHelper" in patched, f"Experiment #{exp_id} missing 3D vector ArrowHelper"
+        assert "physicraft-db-parameter-listener" in patched, f"Experiment #{exp_id} missing parameter listener script"
+        assert "\u20d7" not in patched, f"Experiment #{exp_id} HTML contains U+20D7 combining arrow"
+        assert "\u20d7" not in str(exp["curriculum"]), f"Experiment #{exp_id} curriculum contains U+20D7"
+
+    # 3. Verify natural-language keyword & specific parameter request listener across categories
+    spoken_queries = [
+        ("Show a roller coaster spline track with kinetic and potential energy bars at mass 12 kg", 3, {"mass_kg": 12.0}),
+        ("Model rolling down a ramp race comparing solid sphere, hollow sphere, cylinder, and hoop at 35 degrees", 6, {"angle_deg": 35.0}),
+        ("Show gyroscopic precession and nutation of a spinning bicycle wheel", 8, {}),
+        ("Demonstrate Earth-Moon Lagrange points L1 through L5 and 3-body effective potential surface", 16, {}),
+        ("Show 3D Bernoulli's principle Venturi tube with fluid streamlines", 20, {}),
+        ("Model 3D Doppler effect wavefront spheres and supersonic Mach cone", 25, {}),
+        ("Show Michelson interferometer with movable mirror and circular fringe pattern at 550 nm", 31, {"wavelength": 550.0}),
+        ("Show bar magnet falling through a conductive ring with induced eddy currents and 4.5 tesla", 38, {"b_field_t": 4.5}),
+        ("Show Special Relativity Minkowski spacetime diagram and light clock time dilation", 42, {}),
+        ("Show Stern-Gerlach experiment with spin-1/2 silver atoms in an inhomogeneous magnetic field", 49, {}),
+        ("Model nuclear fission chain reaction of Uranium-235 with control rods", 50, {}),
+    ]
+
+    for query, expected_id, expected_overrides in spoken_queries:
+        match_res = client.get("/api/experiments/match", params={"q": query})
+        assert match_res.status_code == 200
+        mdata = match_res.json()
+        assert mdata["matched"] is True, f"Failed to match query: {query}"
+        assert mdata["experiment_id"] == expected_id, (
+            f"Query '{query}' matched #{mdata['experiment_id']} ({mdata['title']}) instead of #{expected_id}"
+        )
+        for k, v in expected_overrides.items():
+            assert mdata["parameter_overrides"].get(k) == v, (
+                f"Expected override {k}={v} in {mdata['parameter_overrides']} for query '{query}'"
+            )
+
+        # Also test full /api/generate synthesis for the spoken query
+        gen_res = client.post("/api/generate", json={"prompt": query})
+        assert gen_res.status_code == 200
+        gdata = gen_res.json()
+        assert gdata["verification"]["passed"] is True
+        assert f"window.__PHYSICRAFT_DB_EXP_ID = {expected_id}" in gdata["html"]
+
+    print("✓ All 50 3D Physics Database Experiments & Natural-Language Parameter Listener verified!")
+
+
 if __name__ == "__main__":
     test_presets_verification()
     test_auto_instrumentation()
@@ -235,4 +301,5 @@ if __name__ == "__main__":
     test_ferpa_pii_redaction_gate()
     test_fastapi_endpoints()
     test_universal_physics_concepts_and_zero_missing_glyphs()
-    print("\n🎉 ALL TRACK A VERIFICATION TESTS PASSED!")
+    test_all_50_physics_database_experiments_and_parameter_listener()
+    print("\n🎉 ALL TRACK A & 50-EXPERIMENT DATABASE VERIFICATION TESTS PASSED!")
