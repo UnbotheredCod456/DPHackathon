@@ -506,6 +506,21 @@ def run_stdlib_server(host: str = "127.0.0.1", port: int = 8000) -> None:
                 self._send_json(asyncio.run(api_lineage()))
             elif path == "/api/presets":
                 self._send_json(asyncio.run(api_presets()))
+            elif path == "/api/experiments":
+                self._send_json(asyncio.run(api_experiments()))
+            elif path == "/api/experiments/match":
+                q = qs.get("q", [""])[0]
+                self._send_json(asyncio.run(api_match_experiment(q=q)))
+            elif path.startswith("/api/experiments/"):
+                tail = path[len("/api/experiments/"):]
+                if tail.isdigit():
+                    prompt_arg = qs.get("prompt", [""])[0]
+                    try:
+                        self._send_json(asyncio.run(api_get_experiment(int(tail), prompt=prompt_arg)))
+                    except HTTPException as exc:
+                        self._send_json({"detail": exc.detail}, status=exc.status_code)
+                else:
+                    self.send_error(404, "Not Found")
             elif path == "/api/models-50":
                 q = qs.get("q", [None])[0]
                 self._send_json(asyncio.run(api_models_50(q=q)))
