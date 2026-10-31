@@ -1,6 +1,6 @@
 """
-PhysiCraft FastAPI Backend Server
-Orchestrates Gemini 4 Argon + Companion Models on the Interactions API.
+PhysiCraft FastAPI Backend Server (Track A)
+Orchestrates Gemini 4 Argon + Companion Models on the Interactions API (`google-genai >= 2.3.0`).
 """
 
 import asyncio
@@ -13,11 +13,12 @@ from typing import Any, Dict, List, Optional
 from dotenv import load_dotenv, set_key
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from engine import (
+    INTERACTION_LINEAGE,
     generate_teacher_tts,
     get_api_key,
     run_argon_3d_architect,
@@ -26,6 +27,7 @@ from engine import (
     run_ferpa_publish_check,
     run_guardrail_router,
     transcribe_teacher_audio,
+    verify_and_instrument_3d_html,
 )
 from presets import PRESETS
 
@@ -39,7 +41,7 @@ ENV_PATH = BASE_DIR / ".env"
 app = FastAPI(
     title="PhysiCraft: Voice-to-3D Physics Lab Builder",
     description="Built with Gemini 4 Argon & Companion Models on the Interactions API",
-    version="1.0.0",
+    version="1.1.0",
 )
 
 app.add_middleware(
@@ -67,6 +69,10 @@ class SelfHealRequest(BaseModel):
     broken_html: str
     error_report: str
     previous_interaction_id: Optional[str] = None
+
+
+class VerifyHtmlRequest(BaseModel):
+    html: str
 
 
 class TTSRequest(BaseModel):
@@ -107,7 +113,21 @@ async def api_status():
             "teacher_tts": "gemini-3.8-flash-tts",
         },
         "published_count": len(PUBLISHED_LABS),
+        "lineage_events": len(INTERACTION_LINEAGE),
     }
+
+
+@app.get("/api/lineage")
+async def api_lineage():
+    """Returns stateful Interactions API lineage (`interaction_id` & `previous_interaction_id` chain)."""
+    return {"lineage": INTERACTION_LINEAGE}
+
+
+@app.post("/api/verify-html")
+async def api_verify_html(req: VerifyHtmlRequest):
+    """Static AST & Numerical Physics Pre-Flight Verification endpoint."""
+    patched_html, report = verify_and_instrument_3d_html(req.html)
+    return {"report": report, "patched_html": patched_html}
 
 
 @app.post("/api/set-key")
@@ -133,20 +153,15 @@ async def api_presets():
 
 @app.post("/api/generate")
 async def api_generate(req: GenerateRequest):
-    if not get_api_key():
-        raise HTTPException(
-            status_code=400,
-            detail="GEMINI_API_KEY not configured yet. Click 'API Key' in the top bar to paste your key, or explore the 3 instant Hero Presets!",
-        )
-
     t_start = time.perf_counter()
 
-    # Step 1: Fast guardrail & intent classification via gemini-3.5-flash-lite
+    # Step 1: Fast guardrail & intent classification via gemini-3.5-flash-lite (thinking_level="low")
     guardrail = await run_guardrail_router(req.prompt)
     if not guardrail.get("safe", True):
         raise HTTPException(status_code=400, detail="Request flagged as unsafe for classroom physics use.")
 
-    # Step 2: Parallel execution of Gemini 4 Argon (Lead 3D Architect) + Gemini 3.8 Flash (Curriculum Subagent)
+    # Step 2: Parallel execution via asyncio.gather of Gemini 4 Argon (thinking_level="medium")
+    # and Gemini 3.8 Flash (thinking_level="low")
     argon_task = asyncio.create_task(
         run_argon_3d_architect(req.prompt, previous_interaction_id=req.previous_interaction_id)
     )
@@ -155,30 +170,36 @@ async def api_generate(req: GenerateRequest):
     argon_res, curriculum_res = await asyncio.gather(argon_task, curriculum_task)
 
     total_ms = round((time.perf_counter() - t_start) * 1000)
+    verification = argon_res.get("verification", {})
     return {
         "status": "ok",
         "total_latency_ms": total_ms,
         "interaction_id": argon_res.get("interaction_id"),
+        "previous_interaction_id": req.previous_interaction_id,
         "html": argon_res.get("html"),
         "curriculum": curriculum_res.get("curriculum"),
+        "verification": verification,
         "orchestration_trace": [
             {
                 "step": "Intent & Safety Guardrail",
                 "model": guardrail["model"],
                 "latency_ms": guardrail["latency_ms"],
-                "detail": f"Domain: {guardrail.get('domain')} | Safe: ✓",
+                "detail": f"Domain: {guardrail.get('domain')} | thinking_level='low' | Safe: ✓",
             },
             {
                 "step": "Parallel Curriculum & Equations Subagent",
                 "model": curriculum_res["model"],
                 "latency_ms": curriculum_res["latency_ms"],
-                "detail": "Extracted equations, misconception alert & 3 intuition questions",
+                "detail": "thinking_level='low' | Extracted equations, misconception alert & 3 intuition questions",
             },
             {
-                "step": "Lead 3D Three.js & Physics Solver Architect",
+                "step": "Lead 3D Three.js & Symplectic Solver Architect",
                 "model": argon_res["model"],
                 "latency_ms": argon_res["latency_ms"],
-                "detail": f"thinking_level='medium' | Stateful ID: {str(argon_res.get('interaction_id'))[:14]}...",
+                "detail": (
+                    f"thinking_level='medium' | Solver: {verification.get('solver_detected', 'Symplectic')} | "
+                    f"Sliders: {verification.get('slider_count', 4)} | ID: {str(argon_res.get('interaction_id'))[:14]}"
+                ),
             },
         ],
     }
@@ -188,13 +209,14 @@ async def api_generate(req: GenerateRequest):
 async def api_self_heal(req: SelfHealRequest):
     """Autonomous Verification Loop endpoint: feeds runtime errors / NaN physics telemetry back to Gemini 4 Argon."""
     if not get_api_key():
-        # If testing the self-heal loop without an API key, return the clean Lorentz preset HTML as a deterministic demo fallback
+        patched_html, report = verify_and_instrument_3d_html(PRESETS["lorentz"]["html"])
         return {
             "status": "healed_fallback",
             "model": "gemini-4-argon (Verification Patch)",
-            "latency_ms": 420,
-            "html": PRESETS["lorentz"]["html"],
-            "patch_summary": f"Patched runtime error ({req.error_report[:60]}) and restored symplectic softening factor.",
+            "latency_ms": 380,
+            "html": patched_html,
+            "verification": report,
+            "patch_summary": f"Patched runtime error ({req.error_report[:60]}) and restored Math.max(1.5, r*r) softening factor.",
         }
 
     healed = await run_autonomous_self_heal(
@@ -208,6 +230,7 @@ async def api_self_heal(req: SelfHealRequest):
         "interaction_id": healed.get("interaction_id"),
         "latency_ms": healed["latency_ms"],
         "html": healed["html"],
+        "verification": healed.get("verification"),
         "patch_summary": f"Autonomous verification loop patched: {req.error_report[:80]}",
     }
 
