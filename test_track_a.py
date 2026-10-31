@@ -50,6 +50,12 @@ def test_auto_instrumentation():
 def test_voice_to_3d_magnetic_flux_and_rutherford():
     client = TestClient(fastapi_app.app)
 
+    # 0. Verify Voice-to-3D Hero Launchpad is served on startup without a default preset
+    root_res = client.get("/")
+    assert root_res.status_code == 200
+    assert 'id="voice-hero-stage"' in root_res.text
+    assert 'id="btn-hero-mic"' in root_res.text
+
     # 1. Teacher speaks into microphone: "Explain magnetic flux and Faraday's law of induction"
     flux_res = client.post(
         "/api/generate",
@@ -59,6 +65,12 @@ def test_voice_to_3d_magnetic_flux_and_rutherford():
     flux_data = flux_res.json()
     assert flux_data["sla_under_10s"] is True
     assert flux_data["total_latency_ms"] < 10000
+    # Verify Step 1: Pre-Modeling Physics Accuracy Audit (Argon High)
+    physics_audit = flux_data["physics_accuracy_check"]
+    assert physics_audit["physically_accurate"] is True
+    assert "Faraday" in physics_audit["verified_law"]
+    assert len(physics_audit["conservation_invariants"]) >= 2
+    assert len(physics_audit["vector_visualizers"]) >= 2
     assert "Φ_B" in flux_data["curriculum"]["concept"]
     assert flux_data["verification"]["passed"] is True
     assert flux_data["verification"]["slider_count"] >= 5

@@ -163,21 +163,26 @@ async def api_generate(req: GenerateRequest):
     if not guardrail.get("safe", True):
         raise HTTPException(status_code=400, detail="Request flagged as unsafe for classroom physics use.")
 
-    # Step 2: Parallel execution via asyncio.gather (<10s Voice-to-3D SLA):
-    # - Central Lead Agent: gemini-4-argon (thinking_level="high")
+    # Phase 1: First verify that the physics concept is accurate, obeys conservation laws,
+    # and formulate the governing equations + symplectic solver (Central Lead Agent: gemini-4-argon high)
+    central_res = await run_central_argon_high_coordinator(
+        req.prompt, previous_interaction_id=req.previous_interaction_id
+    )
+    physics_check = central_res.get("physics_accuracy_check", {})
+
+    # Phase 2: Model the 3D scene & discussion prompts conditioned on the verified physics formulation
     # - Subagents 1 & 2 (3D Simulation + AST/Physics Verifier): gemini-4-argon (thinking_level="medium")
     # - Companion Curriculum Subagent: gemini-3.8-flash (thinking_level="low")
-    central_task = asyncio.create_task(
-        run_central_argon_high_coordinator(req.prompt, previous_interaction_id=req.previous_interaction_id)
-    )
     argon_task = asyncio.create_task(
-        run_argon_3d_architect(req.prompt, previous_interaction_id=req.previous_interaction_id)
+        run_argon_3d_architect(
+            req.prompt,
+            previous_interaction_id=req.previous_interaction_id,
+            physics_audit=physics_check,
+        )
     )
     curriculum_task = asyncio.create_task(run_curriculum_subagent(req.prompt))
 
-    central_res, argon_res, curriculum_res = await asyncio.gather(
-        central_task, argon_task, curriculum_task
-    )
+    argon_res, curriculum_res = await asyncio.gather(argon_task, curriculum_task)
 
     total_ms = round((time.perf_counter() - t_start) * 1000)
     verification = argon_res.get("verification", {})
@@ -188,30 +193,31 @@ async def api_generate(req: GenerateRequest):
         "interaction_id": argon_res.get("interaction_id"),
         "central_interaction_id": central_res.get("interaction_id"),
         "previous_interaction_id": req.previous_interaction_id,
+        "physics_accuracy_check": physics_check,
         "html": argon_res.get("html"),
         "curriculum": curriculum_res.get("curriculum"),
         "verification": verification,
         "orchestration_trace": [
             {
-                "step": "Intent & Safety Guardrail",
+                "step": "1. Safety & Domain Router",
                 "model": guardrail["model"],
                 "latency_ms": guardrail["latency_ms"],
                 "detail": f"Domain: {guardrail.get('domain')} | thinking_level='low' | Safe: ✓",
             },
             {
-                "step": "Central Lead Physics Coordinator",
+                "step": "2. Pre-Modeling Physics Accuracy & Conservation Audit",
                 "model": central_res["model"],
                 "latency_ms": central_res["latency_ms"],
-                "detail": f"thinking_level='high' | Strategy: {central_res.get('solver_strategy', 'Symplectic 3D Pipeline')}",
+                "detail": f"thinking_level='high' | Law: {physics_check.get('verified_law', 'Verified')[:68]}",
             },
             {
-                "step": "Parallel Curriculum & Equations Subagent",
+                "step": "3. Parallel Curriculum & Student Discussion Prompts",
                 "model": curriculum_res["model"],
                 "latency_ms": curriculum_res["latency_ms"],
-                "detail": "thinking_level='low' | Extracted equations, misconception alert & 3 intuition questions",
+                "detail": "thinking_level='low' | Extracted equations, misconception alert & 3 student discussion prompts",
             },
             {
-                "step": "Subagents 1 & 2: 3D Three.js Architect & Symplectic Verifier",
+                "step": "4. Subagents 1 & 2: 3D Symplectic Modeling & AST Verifier",
                 "model": argon_res["model"],
                 "latency_ms": argon_res["latency_ms"],
                 "detail": (

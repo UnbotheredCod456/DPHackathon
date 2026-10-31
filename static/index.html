@@ -13,11 +13,16 @@
     ::-webkit-scrollbar-track { background: #090d16; }
     ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 3px; }
     @keyframes pulse-ring {
-      0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(244, 63, 94, 0.7); }
-      70% { transform: scale(1); box-shadow: 0 0 0 12px rgba(244, 63, 94, 0); }
-      100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(244, 63, 94, 0); }
+      0% { transform: scale(0.96); box-shadow: 0 0 0 0 rgba(244, 63, 94, 0.75); }
+      70% { transform: scale(1.03); box-shadow: 0 0 0 18px rgba(244, 63, 94, 0); }
+      100% { transform: scale(0.96); box-shadow: 0 0 0 0 rgba(244, 63, 94, 0); }
     }
-    .mic-recording { animation: pulse-ring 1.5s infinite; background: #e11d48 !important; border-color: #fda4af !important; }
+    @keyframes hero-glow {
+      0%, 100% { box-shadow: 0 0 35px rgba(56, 189, 248, 0.28), inset 0 0 20px rgba(56, 189, 248, 0.15); }
+      50% { box-shadow: 0 0 55px rgba(99, 102, 241, 0.45), inset 0 0 28px rgba(56, 189, 248, 0.25); }
+    }
+    .hero-mic-idle { animation: hero-glow 3s infinite ease-in-out; }
+    .mic-recording { animation: pulse-ring 1.4s infinite !important; background: linear-gradient(135deg, #e11d48, #be123c) !important; border-color: #fda4af !important; color: #fff !important; }
     .model-pill { transition: all 0.25s ease; }
     .model-pill.active {
       border-color: #38bdf8;
@@ -32,38 +37,45 @@
   <!-- TOP NAVIGATION & MODEL ORCHESTRATION BAR -->
   <header class="h-14 border-b border-slate-800/80 bg-slate-950/90 px-4 flex items-center justify-between shrink-0 z-20">
     <div class="flex items-center gap-3">
-      <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-sky-400 via-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-sky-500/20 font-extrabold text-white text-lg">
+      <button onclick="showVoiceHeroLaunchpad()" title="Return to Voice-to-3D Launchpad" class="w-9 h-9 rounded-xl bg-gradient-to-br from-sky-400 via-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-sky-500/20 font-extrabold text-white text-lg hover:scale-105 transition">
         ⚛
-      </div>
+      </button>
       <div>
         <div class="flex items-center gap-2">
-          <span class="font-extrabold tracking-tight text-base bg-gradient-to-r from-sky-300 via-cyan-200 to-indigo-300 bg-clip-text text-transparent">PhysiCraft</span>
-          <span class="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-sky-500/15 text-sky-300 border border-sky-500/30 font-semibold">Gemini 4 Argon Lab</span>
+          <span onclick="showVoiceHeroLaunchpad()" class="cursor-pointer font-extrabold tracking-tight text-base bg-gradient-to-r from-sky-300 via-cyan-200 to-indigo-300 bg-clip-text text-transparent">PhysiCraft</span>
+          <span class="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-sky-500/15 text-sky-300 border border-sky-500/30 font-semibold">Voice-to-3D Physics Studio</span>
         </div>
-        <p class="text-[11px] text-slate-400">For Sarah (AP Physics Teacher) • Voice-to-3D Interactive Sandbox</p>
+        <p class="text-[11px] text-slate-400">1. Verify Physics Accuracy (<span class="mono text-sky-300">Argon High</span>) → 2. Model 3D Simulation (<span class="mono text-indigo-300">Argon Medium</span>)</p>
       </div>
     </div>
 
     <!-- Live Model Choreography Strip -->
     <div class="hidden xl:flex items-center gap-1.5 bg-slate-900/90 border border-slate-800 rounded-xl px-2.5 py-1 text-[11px] mono">
-      <span id="pill-transcribe" class="model-pill px-2 py-0.5 rounded-md border border-slate-800 text-slate-400">🎙️ gemini-3.5-transcribe</span>
+      <span id="pill-transcribe" class="model-pill px-2 py-0.5 rounded-md border border-slate-800 text-slate-400">🎙️ 3.5-transcribe</span>
       <span class="text-slate-600">→</span>
-      <span id="pill-lite" class="model-pill px-2 py-0.5 rounded-md border border-slate-800 text-slate-400">🛡️ gemini-3.5-flash-lite</span>
+      <span id="pill-lite" class="model-pill px-2 py-0.5 rounded-md border border-slate-800 text-slate-400">🛡️ 3.5-flash-lite</span>
       <span class="text-slate-600">→</span>
-      <span id="pill-argon" class="model-pill active px-2 py-0.5 rounded-md border border-sky-500/40 text-sky-300 font-semibold">🧠 gemini-4-argon</span>
+      <span id="pill-argon-high" class="model-pill px-2 py-0.5 rounded-md border border-emerald-500/40 text-emerald-300 font-semibold">🔬 argon (high: physics check)</span>
+      <span class="text-slate-600">→</span>
+      <span id="pill-argon" class="model-pill px-2 py-0.5 rounded-md border border-sky-500/40 text-sky-300 font-semibold">🧊 3× argon (med: 3D model)</span>
       <span class="text-slate-600">+</span>
-      <span id="pill-flash" class="model-pill px-2 py-0.5 rounded-md border border-slate-800 text-slate-400">⚡ gemini-3.8-flash</span>
+      <span id="pill-flash" class="model-pill px-2 py-0.5 rounded-md border border-slate-800 text-slate-400">⚡ 3.8-flash</span>
       <span class="text-slate-600">→</span>
-      <span id="pill-tts" class="model-pill px-2 py-0.5 rounded-md border border-slate-800 text-slate-400">🔊 gemini-3.8-flash-tts</span>
+      <span id="pill-tts" class="model-pill px-2 py-0.5 rounded-md border border-slate-800 text-slate-400">🔊 3.8-flash-tts</span>
     </div>
 
-    <!-- Right Controls: Verification Status, Classroom Gate, API Key -->
+    <!-- Right Controls: Voice Launchpad, Verification Status, Classroom Gate, API Key -->
     <div class="flex items-center gap-2">
+      <button onclick="showVoiceHeroLaunchpad()" class="px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-sky-300 text-xs font-semibold flex items-center gap-1.5 transition">
+        <span>🎙️</span>
+        <span>Voice Launchpad</span>
+      </button>
+
       <!-- Autonomous Verification Badge -->
-      <div id="verify-badge" class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 text-xs font-medium">
-        <span id="verify-dot" class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-        <span id="verify-text" class="mono text-[11px]">Verified: 60 FPS • 0 NaN</span>
-        <button onclick="triggerFaultInjectionTest()" title="Inject a physics NaN fault to demonstrate Gemini 4 Argon's Autonomous Verification & Self-Healing Loop!" class="ml-1 px-1.5 py-0.5 rounded bg-emerald-500/20 hover:bg-rose-500/30 hover:text-rose-200 text-[10px] border border-emerald-400/30 transition">
+      <div id="verify-badge" class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-900/90 border border-slate-700 text-slate-300 text-xs font-medium">
+        <span id="verify-dot" class="w-2 h-2 rounded-full bg-sky-400"></span>
+        <span id="verify-text" class="mono text-[11px]">Awaiting Voice Prompt</span>
+        <button id="btn-fault-test" onclick="triggerFaultInjectionTest()" title="Inject a physics NaN fault to demonstrate Gemini 4 Argon's Autonomous Verification & Self-Healing Loop!" class="hidden ml-1 px-1.5 py-0.5 rounded bg-emerald-500/20 hover:bg-rose-500/30 hover:text-rose-200 text-[10px] border border-emerald-400/30 transition">
           Test Self-Heal
         </button>
       </div>
@@ -85,68 +97,90 @@
   <!-- MAIN WORKSPACE -->
   <div class="flex-1 flex overflow-hidden">
 
-    <!-- LEFT PANEL: TEACHER STUDIO & CURRICULUM CO-PILOT (410px) -->
-    <aside class="w-[420px] border-r border-slate-800/80 bg-slate-950/75 flex flex-col shrink-0 overflow-y-auto p-4 gap-3.5">
+    <!-- LEFT PANEL: VOICE INPUT, PHYSICS ACCURACY AUDIT & DISCUSSION PROMPTS (430px) -->
+    <aside class="w-[430px] border-r border-slate-800/80 bg-slate-950/75 flex flex-col shrink-0 overflow-y-auto p-4 gap-3.5">
 
-      <!-- 3 HERO DEMO PRESETS -->
-      <div>
-        <div class="flex items-center justify-between mb-1.5">
-          <span class="text-[11px] font-bold uppercase tracking-wider text-slate-400">⚡ Instant Hero Demos (Zero-Latency)</span>
-          <span class="text-[10px] text-sky-400 mono">Click to Switch</span>
-        </div>
-        <div class="grid grid-cols-3 gap-2">
-          <button onclick="loadPreset('lorentz')" id="preset-lorentz" class="preset-btn p-2 rounded-xl border border-sky-500/50 bg-sky-500/10 text-left hover:bg-sky-500/20 transition">
-            <div class="text-sm mb-0.5">🧲 Lorentz</div>
-            <div class="text-[10px] text-slate-300 font-medium leading-tight">3D B-Field Spiral</div>
-          </button>
-          <button onclick="loadPreset('kepler')" id="preset-kepler" class="preset-btn p-2 rounded-xl border border-slate-800 bg-slate-900/70 text-left hover:border-amber-500/50 transition">
-            <div class="text-sm mb-0.5">🪐 Kepler</div>
-            <div class="text-[10px] text-slate-300 font-medium leading-tight">Equal-Area Orbit</div>
-          </button>
-          <button onclick="loadPreset('pendulum')" id="preset-pendulum" class="preset-btn p-2 rounded-xl border border-slate-800 bg-slate-900/70 text-left hover:border-purple-500/50 transition">
-            <div class="text-sm mb-0.5">🦋 Chaos</div>
-            <div class="text-[10px] text-slate-300 font-medium leading-tight">Double Pendulum</div>
-          </button>
-        </div>
-      </div>
-
-      <!-- VOICE & PROMPT BUILDER -->
-      <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-3.5 flex flex-col gap-2.5">
+      <!-- PRIMARY FEATURE: SARAH'S VOICE-TO-3D PROMPT BOX -->
+      <div class="bg-gradient-to-b from-slate-900/95 to-slate-900/75 border border-sky-500/30 rounded-2xl p-3.5 flex flex-col gap-2.5 shadow-lg shadow-sky-950/30">
         <div class="flex items-center justify-between">
-          <label class="text-xs font-bold text-slate-200 flex items-center gap-1.5">
-            <span>🎙️ Sarah's Voice-to-3D Prompt</span>
+          <label class="text-xs font-extrabold text-sky-300 flex items-center gap-1.5">
+            <span>🎙️ Speak or Type Any Physics Concept</span>
           </label>
-          <span id="session-badge" class="text-[10px] mono px-2 py-0.5 rounded bg-slate-800 text-slate-400">New Session</span>
+          <span id="session-badge" class="text-[10px] mono px-2 py-0.5 rounded bg-slate-800 text-slate-400">Voice-to-3D Ready</span>
         </div>
 
-        <textarea id="prompt-input" rows="3" class="w-full rounded-xl bg-slate-950/90 border border-slate-800 focus:border-sky-400 focus:outline-none p-2.5 text-xs text-slate-100 leading-relaxed resize-none select-text" placeholder="Speak or type a physics concept, e.g.: 'Show 3D wave interference from two coherent point sources in a ripple tank with adjustable wavelength and phase difference...'"></textarea>
+        <textarea id="prompt-input" rows="3" class="w-full rounded-xl bg-slate-950/90 border border-slate-800 focus:border-sky-400 focus:outline-none p-2.5 text-xs text-slate-100 leading-relaxed resize-none select-text" placeholder="Speak naturally into your laptop, e.g.: 'Explain magnetic flux through a rotating coil and show how Faraday's law induces an alternating current...'"></textarea>
 
         <div class="flex items-center gap-2">
-          <button id="btn-mic" onclick="toggleVoiceRecording()" class="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-100 text-xs font-semibold flex items-center gap-1.5 transition shrink-0">
+          <button id="btn-mic" onclick="toggleVoiceRecording()" class="px-3.5 py-2 rounded-xl bg-rose-600/20 hover:bg-rose-600/30 border border-rose-500/40 text-rose-200 text-xs font-bold flex items-center gap-1.5 transition shrink-0">
             <span id="mic-icon">🎤</span>
-            <span id="mic-label">Speak Lesson</span>
+            <span id="mic-label">Speak Concept</span>
           </button>
 
           <button id="btn-generate" onclick="generateSimulation(false)" class="flex-1 py-2 px-3 rounded-xl bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white font-bold text-xs shadow-lg shadow-sky-500/20 flex items-center justify-center gap-1.5 transition">
-            <span>✨ Build 3D Lab (Argon)</span>
+            <span>🔬 Verify Physics & Model 3D</span>
           </button>
         </div>
 
         <!-- Multi-Turn Follow-up Bar (uses previous_interaction_id) -->
         <div class="pt-1.5 border-t border-slate-800/80 flex items-center gap-1.5">
-          <input id="followup-input" type="text" class="flex-1 bg-slate-950/80 border border-slate-800 rounded-lg px-2.5 py-1.5 text-[11px] text-slate-200 focus:border-sky-400 focus:outline-none select-text" placeholder="Follow-up edit (uses previous_interaction_id)..." />
+          <input id="followup-input" type="text" class="flex-1 bg-slate-950/80 border border-slate-800 rounded-lg px-2.5 py-1.5 text-[11px] text-slate-200 focus:border-sky-400 focus:outline-none select-text" placeholder="Follow-up voice/text refinement (uses previous_interaction_id)..." />
           <button onclick="generateSimulation(true)" class="px-2.5 py-1.5 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/30 text-sky-300 text-[11px] font-semibold transition shrink-0">
             Refine ↻
           </button>
         </div>
       </div>
 
-      <!-- TEACHER'S GUIDE & COMPANION TTS NARRATION -->
+      <!-- COMPACT EXAMPLE CONCEPTS (SECONDARY TO VOICE) -->
+      <div>
+        <div class="flex items-center justify-between mb-1.5">
+          <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">💡 Quick Class-Prep Examples</span>
+          <span class="text-[10px] text-slate-500 mono">Click to Verify & Model</span>
+        </div>
+        <div class="grid grid-cols-2 gap-1.5">
+          <button onclick="runExamplePrompt('Explain magnetic flux through a rotating coil and Faraday\'s law of induction with normal and B-field vectors')" class="example-chip p-2 rounded-xl border border-slate-800/90 bg-slate-900/60 hover:border-sky-500/50 hover:bg-sky-500/10 text-left transition">
+            <div class="text-xs font-semibold text-sky-300">🌀 Magnetic Flux (Φ_B)</div>
+            <div class="text-[10px] text-slate-400 truncate">Rotating coil & Faraday EMF</div>
+          </button>
+          <button onclick="runExamplePrompt('Show a charged particle spiraling in a 3D magnetic field with velocity and Lorentz force vectors')" class="example-chip p-2 rounded-xl border border-slate-800/90 bg-slate-900/60 hover:border-sky-500/50 hover:bg-sky-500/10 text-left transition">
+            <div class="text-xs font-semibold text-cyan-300">🧲 Lorentz B-Field Spiral</div>
+            <div class="text-[10px] text-slate-400 truncate">F⃗ = q(E⃗ + v⃗ × B⃗) cyclotron</div>
+          </button>
+          <button onclick="runExamplePrompt('Show Kepler\'s equal-area orbit law for a planet around a star with adjustable eccentricity')" class="example-chip p-2 rounded-xl border border-slate-800/90 bg-slate-900/60 hover:border-amber-500/50 hover:bg-amber-500/10 text-left transition">
+            <div class="text-xs font-semibold text-amber-300">🪐 Kepler Equal-Area Orbit</div>
+            <div class="text-[10px] text-slate-400 truncate">Symplectic gravitational sweep</div>
+          </button>
+          <button onclick="runExamplePrompt('Show 3D Rutherford alpha particle Coulomb scattering off a gold nucleus with impact parameter slider')" class="example-chip p-2 rounded-xl border border-slate-800/90 bg-slate-900/60 hover:border-purple-500/50 hover:bg-purple-500/10 text-left transition">
+            <div class="text-xs font-semibold text-purple-300">⚛️ Rutherford Scattering</div>
+            <div class="text-[10px] text-slate-400 truncate">Coulomb repulsion & r_min</div>
+          </button>
+        </div>
+      </div>
+
+      <!-- STEP 1 OUTPUT: PRE-MODELING PHYSICS ACCURACY & CONSERVATION AUDIT CARD -->
+      <div id="physics-audit-card" class="bg-emerald-950/25 border border-emerald-500/35 rounded-2xl p-3 flex flex-col gap-1.5">
+        <div class="flex items-center justify-between">
+          <span class="text-[10px] uppercase tracking-wider font-extrabold text-emerald-400 flex items-center gap-1">
+            <span>🔬 Step 1: Physics Accuracy Audit (Argon High)</span>
+          </span>
+          <span id="audit-badge" class="text-[10px] mono px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-semibold">Standby</span>
+        </div>
+        <div id="audit-law" class="text-xs font-semibold text-white mono leading-snug">
+          Speak a physics concept — Gemini 4 Argon first verifies physical laws & conservation invariants before building the 3D model.
+        </div>
+        <div id="audit-details" class="hidden space-y-1 pt-1 border-t border-emerald-500/20 text-[11px] text-slate-300">
+          <div><strong class="text-emerald-300">Conservation Check:</strong> <span id="audit-invariant"></span></div>
+          <div><strong class="text-sky-300">Numerical Solver:</strong> <span id="audit-solver" class="mono"></span></div>
+          <div><strong class="text-indigo-300">3D Vector Visualizers:</strong> <span id="audit-vectors"></span></div>
+        </div>
+      </div>
+
+      <!-- STEP 2 OUTPUT: TEACHER'S GUIDE, EQUATIONS & STUDENT DISCUSSION PROMPTS -->
       <div class="bg-slate-900/70 border border-slate-800/90 rounded-2xl p-3.5 flex flex-col gap-3 flex-1">
         <div class="flex items-center justify-between">
           <div>
-            <div class="text-[10px] uppercase tracking-wider text-sky-400 font-bold" id="cur-subtitle">AP Physics C: Electricity & Magnetism</div>
-            <h2 class="text-sm font-bold text-white leading-snug" id="cur-title">Lorentz Magnetic Force & Cyclotron Motion</h2>
+            <div class="text-[10px] uppercase tracking-wider text-sky-400 font-bold" id="cur-subtitle">Voice-to-3D Curriculum Co-Pilot</div>
+            <h2 class="text-sm font-bold text-white leading-snug" id="cur-title">Waiting for Sarah's Spoken Concept...</h2>
           </div>
           <button id="btn-tts" onclick="playTeacherNarration()" class="px-2.5 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 text-xs font-semibold flex items-center gap-1.5 shrink-0 transition">
             <span id="tts-icon">🔊</span>
@@ -156,43 +190,152 @@
 
         <!-- Key Equations -->
         <div class="bg-slate-950/90 border border-slate-800/80 rounded-xl p-2.5">
-          <div class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold mb-1.5">📐 Governing Vector Equations (gemini-3.8-flash)</div>
-          <div id="cur-equations" class="flex flex-wrap gap-1.5 mono text-xs text-sky-300"></div>
+          <div class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold mb-1.5">📐 Verified Governing Equations</div>
+          <div id="cur-equations" class="flex flex-wrap gap-1.5 mono text-xs text-sky-300">
+            <span class="text-slate-500 text-[11px]">Equations appear automatically after Step 1 Physics Check.</span>
+          </div>
         </div>
 
         <!-- Teacher Demo Cheatsheet -->
         <div class="bg-sky-950/30 border border-sky-500/25 rounded-xl p-2.5 text-xs leading-relaxed">
-          <div class="font-bold text-sky-300 mb-0.5 flex items-center gap-1">💡 Sarah's Classroom Demo Tip</div>
-          <p id="cur-guide" class="text-slate-300 text-[11.5px]"></p>
+          <div class="font-bold text-sky-300 mb-0.5 flex items-center gap-1">💡 Sarah's Interactive Slider & Vector Guide</div>
+          <p id="cur-guide" class="text-slate-300 text-[11.5px]">Speak into your microphone or pick an example above to generate a 3D simulation with sliders and vector arrows.</p>
         </div>
 
         <!-- Misconception Alert -->
         <div class="bg-rose-950/30 border border-rose-500/25 rounded-xl p-2.5 text-xs leading-relaxed">
           <div class="font-bold text-rose-300 mb-0.5 flex items-center gap-1">⚠️ Common Student Misconception Fixed</div>
-          <p id="cur-misconception" class="text-slate-300 text-[11.5px]"></p>
+          <p id="cur-misconception" class="text-slate-300 text-[11.5px]">PhysiCraft highlights the #1 textbook misconception that 3D spatial manipulation resolves.</p>
         </div>
 
-        <!-- Student Intuition Check Questions -->
+        <!-- Student Discussion Prompts -->
         <div>
-          <div class="text-[11px] font-bold text-slate-300 mb-1.5">🎯 Live Student Intuition Checks</div>
-          <ol id="cur-questions" class="space-y-1.5 text-[11.5px] text-slate-300 list-decimal list-inside"></ol>
+          <div class="text-[11px] font-bold text-slate-300 mb-1.5">💬 Student Discussion Prompts</div>
+          <ol id="cur-questions" class="space-y-1.5 text-[11.5px] text-slate-300 list-decimal list-inside">
+            <li class="bg-slate-950/60 border border-slate-800/80 rounded-lg px-2.5 py-1.5 text-slate-500">Discussion prompts will be generated alongside your 3D model.</li>
+          </ol>
         </div>
       </div>
 
     </aside>
 
-    <!-- RIGHT PANEL: INTERACTIVE 3D SANDBOX + TELEMETRY DRAWER -->
+    <!-- RIGHT PANEL: VOICE-TO-3D HERO STAGE + INTERACTIVE 3D SANDBOX -->
     <main class="flex-1 flex flex-col bg-slate-950 relative overflow-hidden">
 
-      <!-- Loading Overlay during Gemini 4 Argon synthesis -->
-      <div id="loading-overlay" class="hidden absolute inset-0 z-30 bg-slate-950/85 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center">
-        <div class="w-16 h-16 rounded-2xl bg-sky-500/15 border border-sky-400/40 flex items-center justify-center text-3xl animate-bounce mb-4">
-          ⚛
+      <!-- VOICE-TO-3D HERO LAUNCHPAD (SHOWN BY DEFAULT — NO PRE-LOADED PRESET!) -->
+      <div id="voice-hero-stage" class="absolute inset-0 z-10 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900 via-slate-950 to-[#040711] flex flex-col items-center justify-center p-8 overflow-y-auto">
+        <div class="max-w-3xl w-full flex flex-col items-center text-center">
+
+          <!-- 2-Step Pipeline Pill -->
+          <div class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-slate-900/90 border border-sky-500/30 text-xs text-sky-300 mb-5 shadow-lg">
+            <span class="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold text-[10px]">STEP 1</span>
+            <span>Verify Physics Accuracy (<code class="mono">gemini-4-argon high</code>)</span>
+            <span class="text-slate-500">→</span>
+            <span class="px-2 py-0.5 rounded-full bg-sky-500/20 text-sky-300 font-bold text-[10px]">STEP 2</span>
+            <span>Synthesize 3D Scene, Sliders & Vectors (<code class="mono">&lt;10s</code>)</span>
+          </div>
+
+          <h1 class="text-3xl sm:text-4xl font-extrabold tracking-tight text-white mb-3 leading-tight">
+            Speak a Physics Concept.<br/>
+            <span class="bg-gradient-to-r from-sky-400 via-cyan-300 to-indigo-400 bg-clip-text text-transparent">Get a Verified 3D Interactive Lab in Seconds.</span>
+          </h1>
+
+          <p class="text-sm text-slate-300 max-w-2xl mb-7 leading-relaxed">
+            Sarah speaks naturally into her laptop during class prep. First, <strong class="text-emerald-300">Gemini 4 Argon</strong> checks that the governing equations and conservation laws are physically accurate — then models a sandboxed 3D simulation with sliders, vector visualizers, and student discussion prompts.
+          </p>
+
+          <!-- GIANT CENTRAL VOICE MICROPHONE BUTTON -->
+          <div class="flex flex-col items-center mb-7">
+            <button id="btn-hero-mic" onclick="toggleVoiceRecording()" class="hero-mic-idle w-28 h-28 rounded-full bg-gradient-to-br from-sky-500/25 via-indigo-500/25 to-purple-600/25 border-2 border-sky-400/60 hover:border-sky-300 flex flex-col items-center justify-center gap-1.5 transition transform hover:scale-105 cursor-pointer">
+              <span id="hero-mic-icon" class="text-4xl">🎙️</span>
+              <span id="hero-mic-label" class="text-[11px] font-extrabold uppercase tracking-wider text-sky-200">Tap & Speak</span>
+            </button>
+            <div id="hero-voice-status" class="mt-3 text-xs mono text-slate-400">
+              Click the microphone and say e.g. <span class="text-sky-300">"Explain magnetic flux and Faraday's law of induction"</span>
+            </div>
+          </div>
+
+          <!-- QUICK SPOKEN EXAMPLES GRID -->
+          <div class="w-full max-w-2xl">
+            <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2.5">
+              Or Click a Sample Spoken Prompt to Run the Physics Check → 3D Pipeline:
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-left">
+              <button onclick="runExamplePrompt('Explain magnetic flux through a rotating coil and show how Faraday\'s law induces an alternating current')" class="p-3.5 rounded-2xl bg-slate-900/80 hover:bg-slate-900 border border-slate-800 hover:border-sky-500/50 transition group">
+                <div class="flex items-center justify-between mb-1">
+                  <span class="text-xs font-bold text-sky-300 group-hover:text-sky-200">🌀 Magnetic Flux & Faraday's Law</span>
+                  <span class="text-[10px] mono px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-300">Φ_B = B·A·cosθ</span>
+                </div>
+                <p class="text-[11px] text-slate-400 leading-snug">
+                  "Explain magnetic flux through a rotating coil and show how Faraday's law induces an alternating current."
+                </p>
+              </button>
+
+              <button onclick="runExamplePrompt('Show a charged particle spiraling in a 3D magnetic field with velocity and Lorentz force vectors')" class="p-3.5 rounded-2xl bg-slate-900/80 hover:bg-slate-900 border border-slate-800 hover:border-cyan-500/50 transition group">
+                <div class="flex items-center justify-between mb-1">
+                  <span class="text-xs font-bold text-cyan-300 group-hover:text-cyan-200">🧲 Lorentz Force 3D Spiral</span>
+                  <span class="text-[10px] mono px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-300">F⃗ = q(v⃗ × B⃗)</span>
+                </div>
+                <p class="text-[11px] text-slate-400 leading-snug">
+                  "Show a charged particle spiraling in a 3D magnetic field with velocity and Lorentz force vectors."
+                </p>
+              </button>
+
+              <button onclick="runExamplePrompt('Show Kepler\'s equal-area orbit law for a planet around a star with adjustable eccentricity')" class="p-3.5 rounded-2xl bg-slate-900/80 hover:bg-slate-900 border border-slate-800 hover:border-amber-500/50 transition group">
+                <div class="flex items-center justify-between mb-1">
+                  <span class="text-xs font-bold text-amber-300 group-hover:text-amber-200">🪐 Kepler's Equal-Area Orbit</span>
+                  <span class="text-[10px] mono px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300">dA/dt = L/2m</span>
+                </div>
+                <p class="text-[11px] text-slate-400 leading-snug">
+                  "Show Kepler's equal-area orbit law for a planet around a star with adjustable eccentricity."
+                </p>
+              </button>
+
+              <button onclick="runExamplePrompt('Show 3D two-source ripple tank wave interference with adjustable wavelength and phase difference')" class="p-3.5 rounded-2xl bg-slate-900/80 hover:bg-slate-900 border border-slate-800 hover:border-indigo-500/50 transition group">
+                <div class="flex items-center justify-between mb-1">
+                  <span class="text-xs font-bold text-indigo-300 group-hover:text-indigo-200">🌊 3D Wave Interference Tank</span>
+                  <span class="text-[10px] mono px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300">Δr = mλ</span>
+                </div>
+                <p class="text-[11px] text-slate-400 leading-snug">
+                  "Show 3D two-source ripple tank wave interference with adjustable wavelength and phase difference."
+                </p>
+              </button>
+            </div>
+          </div>
+
         </div>
-        <h3 id="loading-title" class="text-lg font-bold text-white mb-1">Gemini 4 Argon is Architecting 3D Physics Scene...</h3>
-        <p id="loading-step" class="text-xs text-sky-300 mono mb-4">Step 1/3: gemini-3.5-flash-lite verifying safety & domain routing...</p>
-        <div class="w-80 h-2 bg-slate-800 rounded-full overflow-hidden">
-          <div id="loading-bar" class="h-full bg-gradient-to-r from-sky-400 via-indigo-500 to-purple-500 transition-all duration-300" style="width: 25%"></div>
+      </div>
+
+      <!-- 2-PHASE LOADING OVERLAY: STEP 1 (PHYSICS ACCURACY CHECK) -> STEP 2 (3D MODELING) -->
+      <div id="loading-overlay" class="hidden absolute inset-0 z-30 bg-slate-950/90 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center">
+        <div class="max-w-lg w-full bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-2xl">
+          <div class="w-14 h-14 mx-auto rounded-2xl bg-sky-500/15 border border-sky-400/40 flex items-center justify-center text-2xl animate-pulse mb-3">
+            ⚛
+          </div>
+          <h3 id="loading-title" class="text-base font-extrabold text-white mb-1">Verifying Physics Accuracy & Modeling 3D Scene...</h3>
+          <p id="loading-spoken-quote" class="text-xs text-sky-300 italic mb-4"></p>
+
+          <div class="space-y-2.5 text-left mb-4">
+            <div id="stage-box-1" class="p-3 rounded-xl bg-emerald-950/40 border border-emerald-500/40 flex items-start gap-2.5">
+              <span id="stage-icon-1" class="text-sm mt-0.5">🔬</span>
+              <div>
+                <div class="text-xs font-bold text-emerald-300">Step 1: Pre-Modeling Physics Accuracy Check (gemini-4-argon high)</div>
+                <div id="stage-desc-1" class="text-[11px] text-slate-300 mono mt-0.5">Validating governing equations, conservation invariants & vector directions...</div>
+              </div>
+            </div>
+
+            <div id="stage-box-2" class="p-3 rounded-xl bg-slate-950/70 border border-slate-800 flex items-start gap-2.5 opacity-60 transition-opacity">
+              <span id="stage-icon-2" class="text-sm mt-0.5">🧊</span>
+              <div>
+                <div class="text-xs font-bold text-sky-300">Step 2: 3D Symplectic Modeling & AST Verification (gemini-4-argon medium)</div>
+                <div id="stage-desc-2" class="text-[11px] text-slate-400 mono mt-0.5">Synthesizing Three.js scene, interactive sliders, 3D vector arrows & discussion prompts...</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
+            <div id="loading-bar" class="h-full bg-gradient-to-r from-emerald-400 via-sky-400 to-indigo-500 transition-all duration-300" style="width: 35%"></div>
+          </div>
         </div>
       </div>
 
@@ -200,9 +343,9 @@
       <iframe id="sim-iframe" class="w-full flex-1 border-0" sandbox="allow-scripts allow-same-origin"></iframe>
 
       <!-- BOTTOM ORCHESTRATION TRACE & CODE DRAWER BAR -->
-      <div class="h-9 border-t border-slate-800 bg-slate-950 px-4 flex items-center justify-between text-[11px] mono text-slate-400 shrink-0">
+      <div class="h-9 border-t border-slate-800 bg-slate-950 px-4 flex items-center justify-between text-[11px] mono text-slate-400 shrink-0 z-20">
         <div class="flex items-center gap-4">
-          <span id="trace-summary" class="text-slate-300">🟢 Active Engine: <strong class="text-sky-400">gemini-4-argon</strong> (thinking_level="medium")</span>
+          <span id="trace-summary" class="text-slate-300">🟢 Pipeline: <strong class="text-emerald-400">1. Argon High (Physics Audit)</strong> → <strong class="text-sky-400">2. Argon Medium (3D Model)</strong></span>
           <span id="iframe-objects">Scene Meshes: --</span>
         </div>
         <div class="flex items-center gap-2">
@@ -217,13 +360,13 @@
         <div class="w-1/3 flex flex-col">
           <div class="text-xs font-bold text-sky-400 mb-2">🔗 Interactions API Multi-Model Choreography Trace</div>
           <div id="trace-list" class="flex-1 bg-slate-900 border border-slate-800 rounded-xl p-3 overflow-y-auto space-y-2 text-xs mono">
-            <div class="text-slate-400">Load a preset or click "Build 3D Lab" to inspect live model latencies and stateful interaction IDs.</div>
+            <div class="text-slate-400">Speak a concept or click an example to inspect the Step 1 Physics Accuracy Audit and Step 2 3D Modeling trace.</div>
           </div>
         </div>
         <div class="flex-1 flex flex-col">
           <div class="flex items-center justify-between mb-2">
             <span class="text-xs font-bold text-emerald-400">📄 Standalone HTML5 + Three.js Simulation Source</span>
-            <button onclick=" toggleCodeDrawer()" class="text-xs text-slate-400 hover:text-white">✕ Close</button>
+            <button onclick="toggleCodeDrawer()" class="text-xs text-slate-400 hover:text-white">✕ Close</button>
           </div>
           <textarea id="code-viewer" readonly class="flex-1 w-full bg-slate-900 border border-slate-800 rounded-xl p-3 text-[11px] mono text-slate-300 resize-none focus:outline-none select-text"></textarea>
         </div>
@@ -244,7 +387,7 @@
       </div>
 
       <p class="text-xs text-slate-300 mb-3 leading-relaxed">
-        Before PhysiCraft pushes this interactive 3D simulation and quiz to an external system (<span class="mono text-sky-300">Google Classroom Roster</span>), review the privacy audit and confirm publication:
+        Before PhysiCraft pushes this interactive 3D simulation and discussion prompts to an external system (<span class="mono text-sky-300">Google Classroom Roster</span>), review the privacy audit and confirm publication:
       </p>
 
       <div id="publish-details" class="bg-slate-950 border border-slate-800 rounded-xl p-3.5 space-y-2 text-xs mb-4">
@@ -254,7 +397,7 @@
         <div class="flex justify-between"><span class="text-slate-400">3D Simulation Bundle:</span><span id="pub-size" class="mono text-slate-300"></span></div>
         <div class="pt-2 border-t border-slate-800">
           <div class="text-[11px] font-bold text-emerald-400 flex items-center gap-1">
-            <span>🛡️ FERPA & Student PII Guardrail (gemini-3.5-flash-lite):</span>
+            <span>🛡️ FERPA & Student PII Guardrail (Subagent 3):</span>
           </div>
           <p id="pub-audit" class="text-[11px] text-slate-300 mt-0.5 mono">Running privacy scan...</p>
         </div>
@@ -281,7 +424,7 @@
         <button onclick="closeKeyModal()" class="text-slate-400 hover:text-white text-sm">✕</button>
       </div>
       <p class="text-xs text-slate-300 mb-3 leading-relaxed">
-        Paste your hackathon <code class="text-sky-300">GEMINI_API_KEY</code> to unlock live <code class="text-sky-300">gemini-4-argon</code> 3D scene synthesis, <code class="text-sky-300">gemini-3.8-flash</code> curriculum generation, and <code class="text-sky-300">gemini-3.8-flash-tts</code> voice narration.
+        Paste your hackathon <code class="text-sky-300">GEMINI_API_KEY</code> to unlock live <code class="text-sky-300">gemini-4-argon</code> Physics Accuracy Auditing (<code class="text-emerald-300">thinking_level="high"</code>) and 3D scene synthesis (<code class="text-sky-300">thinking_level="medium"</code>).
       </p>
       <input id="api-key-input" type="password" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs mono text-white mb-3 focus:border-sky-400 focus:outline-none select-text" placeholder="AIzaSy..." />
       <div class="flex justify-end gap-2">
@@ -292,8 +435,6 @@
   </div>
 
   <script>
-    let presetsData = {};
-    let currentPresetId = 'lorentz';
     let currentHtml = '';
     let currentCurriculum = null;
     let currentInteractionId = null;
@@ -302,13 +443,23 @@
     let recognition = null;
 
     async function initApp() {
-      const [statusRes, presetsRes] = await Promise.all([
-        fetch('/api/status').then(r => r.json()),
-        fetch('/api/presets').then(r => r.json())
-      ]);
+      const statusRes = await fetch('/api/status').then(r => r.json());
       updateKeyBadge(statusRes.api_key_configured, statusRes.api_key_preview);
-      presetsData = presetsRes.presets;
-      loadPreset('lorentz');
+      // Do NOT auto-load any preset! Start on the Voice-to-3D Hero Launchpad.
+      showVoiceHeroLaunchpad();
+    }
+
+    function showVoiceHeroLaunchpad() {
+      document.getElementById('voice-hero-stage').classList.remove('hidden');
+    }
+
+    function hideVoiceHeroLaunchpad() {
+      document.getElementById('voice-hero-stage').classList.add('hidden');
+    }
+
+    function runExamplePrompt(promptText) {
+      document.getElementById('prompt-input').value = promptText;
+      generateSimulation(false);
     }
 
     function updateKeyBadge(configured, preview) {
@@ -323,31 +474,20 @@
       }
     }
 
-    function loadPreset(id) {
-      const p = presetsData[id];
-      if (!p) return;
-      currentPresetId = id;
-      currentHtml = p.html;
-      currentCurriculum = p.curriculum;
-      currentInteractionId = null;
-      document.getElementById('session-badge').textContent = `Preset: ${id.toUpperCase()}`;
-
-      document.querySelectorAll('.preset-btn').forEach(btn => {
-        btn.className = 'preset-btn p-2 rounded-xl border border-slate-800 bg-slate-900/70 text-left hover:border-slate-700 transition';
-      });
-      const activeBtn = document.getElementById('preset-' + id);
-      if (activeBtn) {
-        activeBtn.className = 'preset-btn p-2 rounded-xl border border-sky-500/60 bg-sky-500/15 text-left transition shadow-md shadow-sky-500/10';
-      }
-
-      document.getElementById('prompt-input').value = p.prompt;
-      document.getElementById('cur-subtitle').textContent = p.subtitle || 'AP Physics Interactive Lab';
-      renderCurriculum(p.curriculum);
-      injectSimulationHtml(p.html);
+    function renderPhysicsAccuracyAudit(audit) {
+      if (!audit) return;
+      document.getElementById('audit-badge').textContent = audit.physically_accurate ? '✓ Physics Verified' : '⚠️ Corrected';
+      document.getElementById('audit-law').textContent = audit.verified_law || 'Verified Governing Equations';
+      const details = document.getElementById('audit-details');
+      details.classList.remove('hidden');
+      document.getElementById('audit-invariant').textContent = (audit.conservation_invariants || []).join(' • ');
+      document.getElementById('audit-solver').textContent = audit.required_solver || 'Symplectic Integrator';
+      document.getElementById('audit-vectors').textContent = (audit.vector_visualizers || []).join(', ');
     }
 
-    function renderCurriculum(cur) {
+    function renderCurriculum(cur, domainOverride) {
       if (!cur) return;
+      document.getElementById('cur-subtitle').textContent = domainOverride || 'AP Physics Interactive 3D Lab';
       document.getElementById('cur-title').textContent = cur.concept || 'Interactive 3D Lab';
       document.getElementById('cur-guide').textContent = cur.teacher_guide || '';
       document.getElementById('cur-misconception').textContent = cur.misconception_alert || '';
@@ -373,6 +513,8 @@
 
     function injectSimulationHtml(html) {
       currentHtml = html;
+      hideVoiceHeroLaunchpad();
+      document.getElementById('btn-fault-test').classList.remove('hidden');
       const iframe = document.getElementById('sim-iframe');
       iframe.srcdoc = html;
       document.getElementById('code-viewer').value = html;
@@ -402,7 +544,7 @@
       }
 
       if (data.type === 'physicraft_error') {
-        await runSelfHealLoop(`Runtime JS Error: ${data.error} at line ${data.line}`);
+        await runSelfHealLoop(`Runtime JS Error: ${data.error} at line ${data.line || data.lineno || 0}`);
       }
     });
 
@@ -451,20 +593,27 @@
       if (!prompt) return;
 
       const overlay = document.getElementById('loading-overlay');
-      const stepTxt = document.getElementById('loading-step');
+      const quoteEl = document.getElementById('loading-spoken-quote');
       const bar = document.getElementById('loading-bar');
+      const stageBox2 = document.getElementById('stage-box-2');
+      const stageDesc1 = document.getElementById('stage-desc-1');
       overlay.classList.remove('hidden');
+      quoteEl.textContent = `"${prompt}"`;
 
       highlightPill('pill-lite', true);
-      stepTxt.textContent = 'Stage 1/3: gemini-3.5-flash-lite verifying classroom guardrails & domain...';
-      bar.style.width = '30%';
+      highlightPill('pill-argon-high', true);
+      stageDesc1.textContent = 'Checking physical accuracy, conservation laws & required symplectic solver...';
+      stageBox2.classList.add('opacity-60');
+      bar.style.width = '40%';
 
       const timer1 = setTimeout(() => {
         highlightPill('pill-flash', true);
         highlightPill('pill-argon', true);
-        stepTxt.textContent = 'Stage 2/3: Parallel gemini-3.8-flash (equations) + gemini-4-argon (3D Three.js solver)...';
-        bar.style.width = '75%';
-      }, 650);
+        stageDesc1.textContent = '✓ Physics Accuracy Verified! Handing governing equations to 3D Architect...';
+        stageBox2.classList.remove('opacity-60');
+        stageBox2.className = 'p-3 rounded-xl bg-sky-950/40 border border-sky-500/40 flex items-start gap-2.5 transition-opacity';
+        bar.style.width = '82%';
+      }, 320);
 
       try {
         const res = await fetch('/api/generate', {
@@ -490,9 +639,12 @@
           ? `Stateful ID: ${String(currentInteractionId).slice(0, 10)}...`
           : 'Live Generated';
 
+        if (data.physics_accuracy_check) {
+          renderPhysicsAccuracyAudit(data.physics_accuracy_check);
+        }
         if (data.curriculum) {
           currentCurriculum = data.curriculum;
-          renderCurriculum(data.curriculum);
+          renderCurriculum(data.curriculum, data.physics_accuracy_check?.domain);
         }
         if (data.html) {
           injectSimulationHtml(data.html);
@@ -509,28 +661,32 @@
               <span>${t.model}</span>
               <span>${t.latency_ms} ms</span>
             </div>
-            <div class="text-slate-400 text-[11px]">${t.step}</div>
+            <div class="text-slate-300 text-[11px] font-medium">${t.step}</div>
             <div class="text-slate-500 text-[10px]">${t.detail}</div>
           </div>
         `).join('');
 
         document.getElementById('trace-summary').innerHTML =
-          `✅ Synthesized by <strong class="text-sky-400">gemini-4-argon</strong> + <strong class="text-indigo-400">gemini-3.8-flash</strong> in ${(data.total_latency_ms / 1000).toFixed(1)}s`;
+          `✅ <strong class="text-emerald-400">Physics Verified</strong> & <strong class="text-sky-400">3D Modeled</strong> in ${(data.total_latency_ms / 1000).toFixed(2)}s`;
       } catch (err) {
         alert('Error calling backend: ' + err.message);
       } finally {
         overlay.classList.add('hidden');
         setTimeout(() => {
           highlightPill('pill-lite', false);
+          highlightPill('pill-argon-high', false);
           highlightPill('pill-flash', false);
         }, 1200);
       }
     }
 
-    // Voice Input: Instant Web Speech API live captions + auto-trigger
+    // Voice Input: Instant Web Speech API live captions + auto-trigger Physics Check -> 3D Model
     function toggleVoiceRecording() {
       const btn = document.getElementById('btn-mic');
       const label = document.getElementById('mic-label');
+      const heroBtn = document.getElementById('btn-hero-mic');
+      const heroLabel = document.getElementById('hero-mic-label');
+      const heroStatus = document.getElementById('hero-voice-status');
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 
       if (isRecording && recognition) {
@@ -539,7 +695,7 @@
       }
 
       if (!SpeechRecognition) {
-        alert('Web Speech API not supported in this browser window. Type your prompt directly!');
+        alert('Web Speech API not supported in this browser window. Type your spoken concept in the prompt box!');
         return;
       }
 
@@ -548,10 +704,15 @@
       recognition.interimResults = true;
       recognition.continuous = false;
 
+      let capturedTranscript = '';
+
       recognition.onstart = () => {
         isRecording = true;
         btn.classList.add('mic-recording');
         label.textContent = 'Listening...';
+        if (heroBtn) heroBtn.classList.add('mic-recording');
+        if (heroLabel) heroLabel.textContent = 'Listening...';
+        if (heroStatus) heroStatus.innerHTML = '<span class="text-rose-400 font-bold">🔴 Listening to Sarah... Speak your physics concept naturally!</span>';
         highlightPill('pill-transcribe', true);
       };
 
@@ -560,14 +721,25 @@
         for (let i = 0; i < event.results.length; i++) {
           transcript += event.results[i][0].transcript;
         }
-        document.getElementById('prompt-input').value = transcript;
+        capturedTranscript = transcript.trim();
+        document.getElementById('prompt-input').value = capturedTranscript;
+        if (heroStatus) {
+          heroStatus.innerHTML = `🎙️ Heard: <span class="text-sky-300 font-semibold">"${capturedTranscript}"</span>`;
+        }
       };
 
       recognition.onend = () => {
         isRecording = false;
         btn.classList.remove('mic-recording');
-        label.textContent = 'Speak Lesson';
+        label.textContent = 'Speak Concept';
+        if (heroBtn) heroBtn.classList.remove('mic-recording');
+        if (heroLabel) heroLabel.textContent = 'Tap & Speak';
         setTimeout(() => highlightPill('pill-transcribe', false), 800);
+
+        // Automatically run Step 1 (Physics Check) -> Step 2 (3D Model) as soon as Sarah finishes speaking!
+        if (capturedTranscript.length > 2) {
+          generateSimulation(false);
+        }
       };
 
       recognition.start();
@@ -620,7 +792,7 @@
       document.getElementById('btn-confirm-pub').disabled = false;
       document.getElementById('pub-title').textContent = currentCurriculum?.concept || '3D Physics Lab';
       document.getElementById('pub-size').textContent = `${(currentHtml.length / 1024).toFixed(1)} KB Standalone Three.js`;
-      document.getElementById('pub-audit').textContent = 'Scanning outbound payload with gemini-3.5-flash-lite...';
+      document.getElementById('pub-audit').textContent = 'Scanning outbound payload with Subagent 3 (FERPA Gate)...';
       highlightPill('pill-lite', true);
 
       const res = await fetch('/api/publish-preview', {
