@@ -18,23 +18,23 @@ def build_magnetic_flux_3d_lab(prompt: str = "Magnetic Flux and Faraday's Law") 
     """
     Flagship 3D Animation of Magnetic Flux (Φ_B = B · A · cosθ) & Faraday's Law (ℰ = -N dΦ_B/dt).
     Visualizes:
-    - Uniform 3D magnetic field lines (B⃗, amber arrows)
+    - Uniform 3D magnetic field lines (B, amber arrows)
     - 3D rotating conducting coil with glowing semi-transparent flux surface pulsing with Φ_B = B·A·cosθ
     - Glowing induced-current charge carriers orbiting the coil ring proportional to ℰ = N·B·A·ω·sin(θ)
-    - Dynamic 3D Vector Arrows (THREE.ArrowHelper) for Normal n̂ (cyan #22d3ee), B⃗ (amber #f59e0b),
+    - Dynamic 3D Vector Arrows (THREE.ArrowHelper) for Normal n̂ (cyan #22d3ee), B (amber #f59e0b),
       and Induced EMF / Current direction (magenta #f43f5e)
     - 5 live interactive sliders: B (Tesla), Area A (m²), Angular Velocity ω (rad/s), Coil Angle θ (deg), Turns N
     """
     curriculum = {
         "concept": "Magnetic Flux (Φ_B = B·A·cosθ) & Faraday's Law of Induction",
         "equations": [
-            "Φ_B = B⃗ · A⃗ = B · A · cos(θ)",
+            "Φ_B = B · A = B · A · cos(θ)",
             "ℰ = -N · (dΦ_B / dt) = N · B · A · ω · sin(ωt)",
             "I_ind = |ℰ| / R  (Lenz's Law opposes ΔΦ_B)"
         ],
         "teacher_guide": (
             "Pause rotation (set ω = 0 rad/s) and drag the Coil Angle θ slider from 0° to 90°! "
-            "Show students how the cyan Area Normal vector n̂ tilts away from the amber Magnetic Field B⃗: "
+            "Show students how the cyan Area Normal vector n̂ tilts away from the amber Magnetic Field B: "
             "at θ = 0° the glowing flux sheet is brightest (maximum B·A), while at θ = 90° the coil slices "
             "parallel to the field lines and Magnetic Flux drops to zero!"
         ),
@@ -44,7 +44,7 @@ def build_magnetic_flux_3d_lab(prompt: str = "Magnetic Flux and Faraday's Law") 
             "dΦ_B/dt — and therefore the magenta Induced EMF — is momentarily zero!"
         ),
         "intuition_questions": [
-            "When the cyan normal vector n̂ is perpendicular to the amber B⃗ field lines (θ = 90°), why is Φ_B = 0 Wb even though B is strong?",
+            "When the cyan normal vector n̂ is perpendicular to the amber B field lines (θ = 90°), why is Φ_B = 0 Wb even though B is strong?",
             "As you spin the coil by increasing ω, why does the magenta Induced Current reverse direction every half-turn (AC generator)?",
             "How does doubling the Number of Turns (N) or Angular Velocity (ω) change peak Induced EMF versus peak Magnetic Flux?"
         ],
@@ -102,7 +102,7 @@ def build_magnetic_flux_3d_lab(prompt: str = "Magnetic Flux and Faraday's Law") 
 <div class="telemetry" id="telemetry">
   <div style="color:#38bdf8;font-weight:700;margin-bottom:3px;">🧲 MAGNETIC FLUX & FARADAY TELEMETRY</div>
   <div id="tel-flux">Magnetic Flux Φ_B: +18.00 Wb</div>
-  <div id="tel-angle">Angle θ (n̂, B⃗): 0.0° (cosθ = +1.00)</div>
+  <div id="tel-angle">Angle θ (n̂, B): 0.0° (cosθ = +1.00)</div>
   <div id="tel-emf" style="color:#f43f5e;font-weight:700;">Induced EMF ℰ: 0.00 V</div>
   <div id="tel-max">Peak Flux B·A: 18.00 Wb</div>
 </div>
@@ -138,7 +138,7 @@ def build_magnetic_flux_3d_lab(prompt: str = "Magnetic Flux and Faraday's Law") 
 
 <div class="legend">
   <div><span class="dot" style="background:#22d3ee"></span>Area Normal (n̂)</div>
-  <div><span class="dot" style="background:#f59e0b"></span>Magnetic Field (B⃗)</div>
+  <div><span class="dot" style="background:#f59e0b"></span>Magnetic Field (B)</div>
   <div><span class="dot" style="background:#f43f5e"></span>Induced EMF & Current (ℰ = -N dΦ/dt)</div>
   <div style="color:#94a3b8;">🖱️ Drag to Orbit • Scroll to Zoom</div>
 </div>
@@ -231,7 +231,7 @@ def build_magnetic_flux_3d_lab(prompt: str = "Magnetic Flux and Faraday's Law") 
   // 1. Area Normal Vector n̂ (Cyan #22d3ee)
   const normalArrow = new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 0), 4.2, 0x22d3ee, 0.65, 0.38);
   scene.add(normalArrow);
-  // 2. Central B-field Vector B⃗ (Amber #f59e0b)
+  // 2. Central B-field Vector B (Amber #f59e0b)
   const centerBArrow = new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 0), 4.2, 0xf59e0b, 0.65, 0.38);
   scene.add(centerBArrow);
   // 3. Induced EMF / Current Tangent Vector (Magenta #f43f5e)
@@ -341,7 +341,7 @@ def build_magnetic_flux_3d_lab(prompt: str = "Magnetic Flux and Faraday's Law") 
     // Update live telemetry
     const degDisplay = ((thetaRad * 180) / Math.PI) % 360;
     document.getElementById('tel-flux').textContent = `Magnetic Flux Φ_B: ${flux >= 0 ? '+' : ''}${flux.toFixed(2)} Wb`;
-    document.getElementById('tel-angle').textContent = `Angle θ (n̂, B⃗): ${degDisplay.toFixed(1)}° (cosθ = ${cosTheta >= 0 ? '+' : ''}${cosTheta.toFixed(2)})`;
+    document.getElementById('tel-angle').textContent = `Angle θ (n̂, B): ${degDisplay.toFixed(1)}° (cosθ = ${cosTheta >= 0 ? '+' : ''}${cosTheta.toFixed(2)})`;
     document.getElementById('tel-emf').textContent = `Induced EMF ℰ: ${emf >= 0 ? '+' : ''}${emf.toFixed(2)} V (${params.N} turns)`;
     document.getElementById('tel-max').textContent = `Peak Flux B·A: ${(params.B * params.A).toFixed(2)} Wb`;
 
@@ -386,7 +386,7 @@ def build_rutherford_scattering_3d_lab(prompt: str = "Rutherford Alpha Particle 
     curriculum = {
         "concept": "Rutherford Coulomb Scattering & Nuclear Impact Parameter",
         "equations": [
-            "F⃗_C = (k_e · q_α · Q_Au / r²) · r̂",
+            "F_C = (k_e · q_α · Q_Au / r²) · r̂",
             "b = (k_e · q_α · Q_Au / 2·E_k) · cot(θ / 2)",
             "d_min = (k_e · 2e · Ze) / E_k  (Closest Approach)"
         ],
@@ -450,7 +450,7 @@ def build_rutherford_scattering_3d_lab(prompt: str = "Rutherford Alpha Particle 
   <div style="color:#f59e0b;font-weight:700;margin-bottom:3px;">⚛️ RUTHERFORD SCATTERING TELEMETRY</div>
   <div id="tel-angle">Scattering Angle θ: 0.0°</div>
   <div id="tel-rmin">Closest Approach r_min: 14.0 fm</div>
-  <div id="tel-force">Coulomb Repulsion |F⃗|: 0.0 N</div>
+  <div id="tel-force">Coulomb Repulsion |F|: 0.0 N</div>
 </div>
 
 <div class="hud">
@@ -578,7 +578,7 @@ def build_rutherford_scattering_3d_lab(prompt: str = "Rutherford Alpha Particle 
     const scatterDeg = (Math.atan2(Math.abs(vel.z), vel.x) * 180) / Math.PI;
     document.getElementById('tel-angle').textContent = `Scattering Angle θ: ${scatterDeg.toFixed(1)}°`;
     document.getElementById('tel-rmin').textContent = `Closest Approach r_min: ${rMin.toFixed(2)} fm`;
-    document.getElementById('tel-force').textContent = `Coulomb Repulsion |F⃗|: ${fVec.length().toFixed(2)} rel`;
+    document.getElementById('tel-force').textContent = `Coulomb Repulsion |F|: ${fVec.length().toFixed(2)} rel`;
 
     controls.update();
     renderer.render(scene, camera);

@@ -15,11 +15,11 @@ PRESETS = {
         "curriculum": {
             "concept": "Lorentz Magnetic Force & Cyclotron Helical Motion",
             "equations": [
-                "F⃗ = q(E⃗ + v⃗ × B⃗)",
+                "F = q(E + v × B)",
                 "r_c = (m · v_⊥) / (|q| · B)",
                 "ω_c = (|q| · B) / m"
             ],
-            "teacher_guide": "Point out to students that the magnetic force vector (magenta) is ALWAYS perpendicular to both the velocity vector (cyan) and the magnetic field (amber). Because F⃗ ⊥ v⃗, the magnetic field does zero work on the particle—its speed and kinetic energy stay constant while its direction curves into a helix!",
+            "teacher_guide": "Point out to students that the magnetic force vector (magenta) is ALWAYS perpendicular to both the velocity vector (cyan) and the magnetic field (amber). Because F ⊥ v, the magnetic field does zero work on the particle—its speed and kinetic energy stay constant while its direction curves into a helix!",
             "misconception_alert": "Students often think a stronger magnetic field speeds up the particle. Use the B-Field slider to show that increasing B tightens the spiral radius (r = mv/qB) without changing speed!",
             "intuition_questions": [
                 "What happens to the spiral chirality (handedness) when you flip the particle from a Proton (+q) to an Electron (-q)?",
@@ -109,9 +109,9 @@ PRESETS = {
 </div>
 
 <div class="legend">
-  <div><span class="dot" style="background:#22d3ee"></span>Velocity (v⃗)</div>
-  <div><span class="dot" style="background:#f43f5e"></span>Lorentz Force (F⃗ = qv⃗×B⃗)</div>
-  <div><span class="dot" style="background:#f59e0b"></span>Magnetic Field Lines (B⃗)</div>
+  <div><span class="dot" style="background:#22d3ee"></span>Velocity (v)</div>
+  <div><span class="dot" style="background:#f43f5e"></span>Lorentz Force (F = qv×B)</div>
+  <div><span class="dot" style="background:#f59e0b"></span>Magnetic Field Lines (B)</div>
   <div style="color:#94a3b8;">🖱️ Drag to Orbit • Scroll to Zoom</div>
 </div>
 
@@ -353,7 +353,7 @@ PRESETS = {
         "curriculum": {
             "concept": "Newton's Law of Universal Gravitation & Kepler's Second Law",
             "equations": [
-                "F⃗_g = -(G · M · m / r²) r̂",
+                "F_g = -(G · M · m / r²) r̂",
                 "dA / dt = L / (2m) = constant",
                 "E_total = ½mv² - GMm / r"
             ],
@@ -444,8 +444,8 @@ PRESETS = {
 </div>
 
 <div class="legend">
-  <div><span class="dot" style="background:#22d3ee"></span>Velocity (v⃗)</div>
-  <div><span class="dot" style="background:#f43f5e"></span>Gravity Force (F⃗_g)</div>
+  <div><span class="dot" style="background:#22d3ee"></span>Velocity (v)</div>
+  <div><span class="dot" style="background:#f43f5e"></span>Gravity Force (F_g)</div>
   <div><span class="dot" style="background:#fbbf24"></span>Equal-Time Area Wedges (ΔA)</div>
 </div>
 

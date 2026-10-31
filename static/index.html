@@ -131,32 +131,6 @@
         </div>
       </div>
 
-      <!-- COMPACT EXAMPLE CONCEPTS (SECONDARY TO VOICE) -->
-      <div>
-        <div class="flex items-center justify-between mb-1.5">
-          <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">💡 Quick Class-Prep Examples</span>
-          <span class="text-[10px] text-slate-500 mono">Click to Verify & Model</span>
-        </div>
-        <div class="grid grid-cols-2 gap-1.5">
-          <button onclick="runExamplePrompt('Explain magnetic flux through a rotating coil and Faraday\'s law of induction with normal and B-field vectors')" class="example-chip p-2 rounded-xl border border-slate-800/90 bg-slate-900/60 hover:border-sky-500/50 hover:bg-sky-500/10 text-left transition">
-            <div class="text-xs font-semibold text-sky-300">🌀 Magnetic Flux (Φ_B)</div>
-            <div class="text-[10px] text-slate-400 truncate">Rotating coil & Faraday EMF</div>
-          </button>
-          <button onclick="runExamplePrompt('Show a charged particle spiraling in a 3D magnetic field with velocity and Lorentz force vectors')" class="example-chip p-2 rounded-xl border border-slate-800/90 bg-slate-900/60 hover:border-sky-500/50 hover:bg-sky-500/10 text-left transition">
-            <div class="text-xs font-semibold text-cyan-300">🧲 Lorentz B-Field Spiral</div>
-            <div class="text-[10px] text-slate-400 truncate">F⃗ = q(E⃗ + v⃗ × B⃗) cyclotron</div>
-          </button>
-          <button onclick="runExamplePrompt('Show Kepler\'s equal-area orbit law for a planet around a star with adjustable eccentricity')" class="example-chip p-2 rounded-xl border border-slate-800/90 bg-slate-900/60 hover:border-amber-500/50 hover:bg-amber-500/10 text-left transition">
-            <div class="text-xs font-semibold text-amber-300">🪐 Kepler Equal-Area Orbit</div>
-            <div class="text-[10px] text-slate-400 truncate">Symplectic gravitational sweep</div>
-          </button>
-          <button onclick="runExamplePrompt('Show 3D Rutherford alpha particle Coulomb scattering off a gold nucleus with impact parameter slider')" class="example-chip p-2 rounded-xl border border-slate-800/90 bg-slate-900/60 hover:border-purple-500/50 hover:bg-purple-500/10 text-left transition">
-            <div class="text-xs font-semibold text-purple-300">⚛️ Rutherford Scattering</div>
-            <div class="text-[10px] text-slate-400 truncate">Coulomb repulsion & r_min</div>
-          </button>
-        </div>
-      </div>
-
       <!-- STEP 1 OUTPUT: PRE-MODELING PHYSICS ACCURACY & CONSERVATION AUDIT CARD -->
       <div id="physics-audit-card" class="bg-emerald-950/25 border border-emerald-500/35 rounded-2xl p-3 flex flex-col gap-1.5">
         <div class="flex items-center justify-between">
@@ -222,7 +196,7 @@
     <!-- RIGHT PANEL: VOICE-TO-3D HERO STAGE + INTERACTIVE 3D SANDBOX -->
     <main class="flex-1 flex flex-col bg-slate-950 relative overflow-hidden">
 
-      <!-- VOICE-TO-3D HERO LAUNCHPAD (SHOWN BY DEFAULT — NO PRE-LOADED PRESET!) -->
+      <!-- VOICE-TO-3D HERO LAUNCHPAD (SHOWN BY DEFAULT — ZERO PRESETS, UNIVERSAL VOICE-TO-3D!) -->
       <div id="voice-hero-stage" class="absolute inset-0 z-10 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-900 via-slate-950 to-[#040711] flex flex-col items-center justify-center p-8 overflow-y-auto">
         <div class="max-w-3xl w-full flex flex-col items-center text-center">
 
@@ -232,74 +206,39 @@
             <span>Verify Physics Accuracy (<code class="mono">gemini-4-argon high</code>)</span>
             <span class="text-slate-500">→</span>
             <span class="px-2 py-0.5 rounded-full bg-sky-500/20 text-sky-300 font-bold text-[10px]">STEP 2</span>
-            <span>Synthesize 3D Scene, Sliders & Vectors (<code class="mono">&lt;10s</code>)</span>
+            <span>Model Any 3D Concept, Vectors & Explanation (<code class="mono">&lt;15s</code>)</span>
           </div>
 
           <h1 class="text-3xl sm:text-4xl font-extrabold tracking-tight text-white mb-3 leading-tight">
-            Speak a Physics Concept.<br/>
-            <span class="bg-gradient-to-r from-sky-400 via-cyan-300 to-indigo-400 bg-clip-text text-transparent">Get a Verified 3D Interactive Lab in Seconds.</span>
+            Request Any Physics Concept.<br/>
+            <span class="bg-gradient-to-r from-sky-400 via-cyan-300 to-indigo-400 bg-clip-text text-transparent">Accurately Modeled & Explained in 3D in &lt;15s.</span>
           </h1>
 
-          <p class="text-sm text-slate-300 max-w-2xl mb-7 leading-relaxed">
-            Sarah speaks naturally into her laptop during class prep. First, <strong class="text-emerald-300">Gemini 4 Argon</strong> checks that the governing equations and conservation laws are physically accurate — then models a sandboxed 3D simulation with sliders, vector visualizers, and student discussion prompts.
+          <p class="text-sm text-slate-300 max-w-2xl mb-6 leading-relaxed">
+            No canned presets required. Speak or type <strong class="text-white">any</strong> physics concept — inclined planes, free-body diagrams, springs, collisions, torque, optics, thermodynamics, electromagnetism, or orbits. First, <strong class="text-emerald-300">Gemini 4 Argon</strong> verifies the governing laws and conservation invariants, then models an interactive 3D simulation with live vector arrows and an on-screen explanation.
           </p>
 
           <!-- GIANT CENTRAL VOICE MICROPHONE BUTTON -->
-          <div class="flex flex-col items-center mb-7">
+          <div class="flex flex-col items-center mb-6">
             <button id="btn-hero-mic" onclick="toggleVoiceRecording()" class="hero-mic-idle w-28 h-28 rounded-full bg-gradient-to-br from-sky-500/25 via-indigo-500/25 to-purple-600/25 border-2 border-sky-400/60 hover:border-sky-300 flex flex-col items-center justify-center gap-1.5 transition transform hover:scale-105 cursor-pointer">
               <span id="hero-mic-icon" class="text-4xl">🎙️</span>
               <span id="hero-mic-label" class="text-[11px] font-extrabold uppercase tracking-wider text-sky-200">Tap & Speak</span>
             </button>
             <div id="hero-voice-status" class="mt-3 text-xs mono text-slate-400">
-              Click the microphone and say e.g. <span class="text-sky-300">"Explain magnetic flux and Faraday's law of induction"</span>
+              Tap the microphone and speak any physics concept aloud
             </div>
           </div>
 
-          <!-- QUICK SPOKEN EXAMPLES GRID -->
-          <div class="w-full max-w-2xl">
-            <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2.5">
-              Or Click a Sample Spoken Prompt to Run the Physics Check → 3D Pipeline:
+          <!-- DIRECT UNIVERSAL CONCEPT INPUT BAR ON HERO STAGE -->
+          <div class="w-full max-w-2xl bg-slate-900/90 border border-sky-500/35 rounded-2xl p-3 shadow-2xl">
+            <div class="flex items-center gap-2">
+              <input id="hero-prompt-input" type="text" onkeydown="if(event.key==='Enter') submitHeroPrompt()" class="flex-1 bg-slate-950/90 border border-slate-800 focus:border-sky-400 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none select-text" placeholder="Or type any physics concept (e.g. 'show box moving down a ramp', 'mass on a spring Hooke's law', 'elastic collision', 'Snell's law refraction')..." />
+              <button onclick="submitHeroPrompt()" class="px-4 py-2.5 rounded-xl bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white font-bold text-xs shadow-lg shadow-sky-500/25 shrink-0 transition">
+                🔬 Verify & Model 3D
+              </button>
             </div>
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-left">
-              <button onclick="runExamplePrompt('Explain magnetic flux through a rotating coil and show how Faraday\'s law induces an alternating current')" class="p-3.5 rounded-2xl bg-slate-900/80 hover:bg-slate-900 border border-slate-800 hover:border-sky-500/50 transition group">
-                <div class="flex items-center justify-between mb-1">
-                  <span class="text-xs font-bold text-sky-300 group-hover:text-sky-200">🌀 Magnetic Flux & Faraday's Law</span>
-                  <span class="text-[10px] mono px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-300">Φ_B = B·A·cosθ</span>
-                </div>
-                <p class="text-[11px] text-slate-400 leading-snug">
-                  "Explain magnetic flux through a rotating coil and show how Faraday's law induces an alternating current."
-                </p>
-              </button>
-
-              <button onclick="runExamplePrompt('Show a charged particle spiraling in a 3D magnetic field with velocity and Lorentz force vectors')" class="p-3.5 rounded-2xl bg-slate-900/80 hover:bg-slate-900 border border-slate-800 hover:border-cyan-500/50 transition group">
-                <div class="flex items-center justify-between mb-1">
-                  <span class="text-xs font-bold text-cyan-300 group-hover:text-cyan-200">🧲 Lorentz Force 3D Spiral</span>
-                  <span class="text-[10px] mono px-1.5 py-0.5 rounded bg-cyan-500/15 text-cyan-300">F⃗ = q(v⃗ × B⃗)</span>
-                </div>
-                <p class="text-[11px] text-slate-400 leading-snug">
-                  "Show a charged particle spiraling in a 3D magnetic field with velocity and Lorentz force vectors."
-                </p>
-              </button>
-
-              <button onclick="runExamplePrompt('Show Kepler\'s equal-area orbit law for a planet around a star with adjustable eccentricity')" class="p-3.5 rounded-2xl bg-slate-900/80 hover:bg-slate-900 border border-slate-800 hover:border-amber-500/50 transition group">
-                <div class="flex items-center justify-between mb-1">
-                  <span class="text-xs font-bold text-amber-300 group-hover:text-amber-200">🪐 Kepler's Equal-Area Orbit</span>
-                  <span class="text-[10px] mono px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300">dA/dt = L/2m</span>
-                </div>
-                <p class="text-[11px] text-slate-400 leading-snug">
-                  "Show Kepler's equal-area orbit law for a planet around a star with adjustable eccentricity."
-                </p>
-              </button>
-
-              <button onclick="runExamplePrompt('Show 3D two-source ripple tank wave interference with adjustable wavelength and phase difference')" class="p-3.5 rounded-2xl bg-slate-900/80 hover:bg-slate-900 border border-slate-800 hover:border-indigo-500/50 transition group">
-                <div class="flex items-center justify-between mb-1">
-                  <span class="text-xs font-bold text-indigo-300 group-hover:text-indigo-200">🌊 3D Wave Interference Tank</span>
-                  <span class="text-[10px] mono px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300">Δr = mλ</span>
-                </div>
-                <p class="text-[11px] text-slate-400 leading-snug">
-                  "Show 3D two-source ripple tank wave interference with adjustable wavelength and phase difference."
-                </p>
-              </button>
+            <div class="mt-2 text-[11px] text-slate-400 text-left px-1">
+              <span class="text-sky-300 font-semibold">Universal Coverage:</span> Inclined Planes & Free-Body Diagrams • Springs & SHM • Momentum Collisions • Rotational Torque • Snell's Law Optics • Ideal Gas Piston • Magnetic Flux • Lorentz Spiral • Kepler Orbits • Custom Vector Fields
             </div>
           </div>
 
@@ -328,7 +267,7 @@
               <span id="stage-icon-2" class="text-sm mt-0.5">🧊</span>
               <div>
                 <div class="text-xs font-bold text-sky-300">Step 2: 3D Symplectic Modeling & AST Verification (gemini-4-argon medium)</div>
-                <div id="stage-desc-2" class="text-[11px] text-slate-400 mono mt-0.5">Synthesizing Three.js scene, interactive sliders, 3D vector arrows & discussion prompts...</div>
+                <div id="stage-desc-2" class="text-[11px] text-slate-400 mono mt-0.5">Synthesizing Three.js scene, interactive sliders, 3D vector arrows & concept explanation...</div>
               </div>
             </div>
           </div>
@@ -342,6 +281,33 @@
       <!-- Sandboxed 3D WebGL / Three.js Iframe -->
       <iframe id="sim-iframe" class="w-full flex-1 border-0" sandbox="allow-scripts allow-same-origin"></iframe>
 
+      <!-- ON-CANVAS INTERACTIVE CONCEPT EXPLANATION & FREE-BODY / VECTOR BREAKDOWN HUD -->
+      <div id="concept-explanation-hud" class="hidden absolute bottom-11 left-3.5 right-3.5 z-10 bg-slate-950/90 backdrop-blur-xl border border-sky-500/35 rounded-2xl p-3.5 shadow-2xl transition-all">
+        <div class="flex items-start justify-between gap-3">
+          <div class="flex-1 min-w-0">
+            <div class="flex flex-wrap items-center gap-2 mb-1">
+              <span class="px-2 py-0.5 rounded-md bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-[10px] font-bold uppercase">✓ Verified 3D Concept Explanation</span>
+              <h4 id="hud-exp-title" class="text-xs sm:text-sm font-extrabold text-white truncate">Interactive 3D Physics Concept</h4>
+              <span id="hud-exp-law" class="text-[11px] mono px-2 py-0.5 rounded bg-sky-500/15 border border-sky-500/30 text-sky-300 font-semibold"></span>
+            </div>
+            <p id="hud-exp-body" class="text-xs text-slate-200 leading-relaxed mb-2"></p>
+            <div class="flex flex-wrap items-center gap-1.5">
+              <span class="text-[10px] uppercase tracking-wider text-slate-400 font-bold mr-1">3D Vectors & Equations:</span>
+              <div id="hud-exp-chips" class="flex flex-wrap gap-1.5"></div>
+            </div>
+          </div>
+          <div class="flex items-center gap-1.5 shrink-0">
+            <button onclick="playTeacherNarration()" class="px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 text-xs font-bold flex items-center gap-1.5 transition">
+              <span>🔊</span>
+              <span>Explain Aloud</span>
+            </button>
+            <button onclick="toggleExplanationHud()" class="px-2 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-400 hover:text-white text-xs transition" title="Minimize Explanation Overlay">
+              ✕
+            </button>
+          </div>
+        </div>
+      </div>
+
       <!-- BOTTOM ORCHESTRATION TRACE & CODE DRAWER BAR -->
       <div class="h-9 border-t border-slate-800 bg-slate-950 px-4 flex items-center justify-between text-[11px] mono text-slate-400 shrink-0 z-20">
         <div class="flex items-center gap-4">
@@ -349,6 +315,9 @@
           <span id="iframe-objects">Scene Meshes: --</span>
         </div>
         <div class="flex items-center gap-2">
+          <button onclick="toggleExplanationHud(true)" class="px-2.5 py-1 rounded bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/30 text-sky-300 transition">
+            📖 Concept Explanation HUD
+          </button>
           <button onclick="toggleCodeDrawer()" class="px-2.5 py-1 rounded bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 transition">
             { } View Generated Three.js & API Trace
           </button>
@@ -449,6 +418,11 @@
       showVoiceHeroLaunchpad();
     }
 
+    function cleanMathText(str) {
+      if (!str) return '';
+      return String(str).replace(/\u20d7/g, '');
+    }
+
     function showVoiceHeroLaunchpad() {
       document.getElementById('voice-hero-stage').classList.remove('hidden');
     }
@@ -457,9 +431,21 @@
       document.getElementById('voice-hero-stage').classList.add('hidden');
     }
 
-    function runExamplePrompt(promptText) {
-      document.getElementById('prompt-input').value = promptText;
+    function submitHeroPrompt() {
+      const heroInput = document.getElementById('hero-prompt-input');
+      if (!heroInput || !heroInput.value.trim()) return;
+      document.getElementById('prompt-input').value = heroInput.value.trim();
       generateSimulation(false);
+    }
+
+    function toggleExplanationHud(forceShow) {
+      const hud = document.getElementById('concept-explanation-hud');
+      if (!hud) return;
+      if (forceShow === true) {
+        hud.classList.remove('hidden');
+      } else {
+        hud.classList.toggle('hidden');
+      }
     }
 
     function updateKeyBadge(configured, preview) {
@@ -474,30 +460,33 @@
       }
     }
 
+    let lastPhysicsAudit = null;
+
     function renderPhysicsAccuracyAudit(audit) {
       if (!audit) return;
+      lastPhysicsAudit = audit;
       document.getElementById('audit-badge').textContent = audit.physically_accurate ? '✓ Physics Verified' : '⚠️ Corrected';
-      document.getElementById('audit-law').textContent = audit.verified_law || 'Verified Governing Equations';
+      document.getElementById('audit-law').textContent = cleanMathText(audit.verified_law || 'Verified Governing Equations');
       const details = document.getElementById('audit-details');
       details.classList.remove('hidden');
-      document.getElementById('audit-invariant').textContent = (audit.conservation_invariants || []).join(' • ');
-      document.getElementById('audit-solver').textContent = audit.required_solver || 'Symplectic Integrator';
-      document.getElementById('audit-vectors').textContent = (audit.vector_visualizers || []).join(', ');
+      document.getElementById('audit-invariant').textContent = cleanMathText((audit.conservation_invariants || []).join(' • '));
+      document.getElementById('audit-solver').textContent = cleanMathText(audit.required_solver || 'Symplectic Integrator');
+      document.getElementById('audit-vectors').textContent = cleanMathText((audit.vector_visualizers || []).join(', '));
     }
 
     function renderCurriculum(cur, domainOverride) {
       if (!cur) return;
-      document.getElementById('cur-subtitle').textContent = domainOverride || 'AP Physics Interactive 3D Lab';
-      document.getElementById('cur-title').textContent = cur.concept || 'Interactive 3D Lab';
-      document.getElementById('cur-guide').textContent = cur.teacher_guide || '';
-      document.getElementById('cur-misconception').textContent = cur.misconception_alert || '';
+      document.getElementById('cur-subtitle').textContent = cleanMathText(domainOverride || 'AP Physics Interactive 3D Lab');
+      document.getElementById('cur-title').textContent = cleanMathText(cur.concept || 'Interactive 3D Lab');
+      document.getElementById('cur-guide').textContent = cleanMathText(cur.teacher_guide || '');
+      document.getElementById('cur-misconception').textContent = cleanMathText(cur.misconception_alert || '');
 
       const eqContainer = document.getElementById('cur-equations');
       eqContainer.innerHTML = '';
       (cur.equations || []).forEach(eq => {
         const span = document.createElement('span');
         span.className = 'px-2 py-1 rounded-md bg-slate-900 border border-slate-700/80 text-sky-300';
-        span.textContent = eq;
+        span.textContent = cleanMathText(eq);
         eqContainer.appendChild(span);
       });
 
@@ -506,18 +495,45 @@
       (cur.intuition_questions || []).forEach(q => {
         const li = document.createElement('li');
         li.className = 'bg-slate-950/60 border border-slate-800/80 rounded-lg px-2.5 py-1.5 leading-snug';
-        li.textContent = q;
+        li.textContent = cleanMathText(q);
         qList.appendChild(li);
       });
+
+      // Populate On-Canvas Interactive Concept Explanation HUD
+      const hud = document.getElementById('concept-explanation-hud');
+      if (hud) {
+        hud.classList.remove('hidden');
+        document.getElementById('hud-exp-title').textContent = cleanMathText(cur.concept || '3D Physics Concept');
+        document.getElementById('hud-exp-law').textContent = cleanMathText(lastPhysicsAudit?.verified_law || (cur.equations && cur.equations[0]) || '');
+        const bodyParts = [];
+        if (cur.teacher_guide) bodyParts.push(cleanMathText(cur.teacher_guide));
+        if (cur.misconception_alert) bodyParts.push('Key Insight: ' + cleanMathText(cur.misconception_alert));
+        document.getElementById('hud-exp-body').textContent = bodyParts.join(' ');
+
+        const chips = document.getElementById('hud-exp-chips');
+        chips.innerHTML = '';
+        (cur.equations || []).slice(0, 3).forEach(eq => {
+          const c = document.createElement('span');
+          c.className = 'px-2 py-0.5 rounded bg-slate-900 border border-sky-500/30 text-sky-300 mono text-[11px]';
+          c.textContent = cleanMathText(eq);
+          chips.appendChild(c);
+        });
+        (lastPhysicsAudit?.vector_visualizers || []).slice(0, 4).forEach(vec => {
+          const v = document.createElement('span');
+          v.className = 'px-2 py-0.5 rounded bg-indigo-950/70 border border-indigo-500/30 text-indigo-200 text-[11px]';
+          v.textContent = '↗ ' + cleanMathText(vec);
+          chips.appendChild(v);
+        });
+      }
     }
 
     function injectSimulationHtml(html) {
-      currentHtml = html;
+      currentHtml = cleanMathText(html);
       hideVoiceHeroLaunchpad();
       document.getElementById('btn-fault-test').classList.remove('hidden');
       const iframe = document.getElementById('sim-iframe');
-      iframe.srcdoc = html;
-      document.getElementById('code-viewer').value = html;
+      iframe.srcdoc = currentHtml;
+      document.getElementById('code-viewer').value = currentHtml;
     }
 
     // Listen for live telemetry and runtime errors from the sandboxed 3D iframe

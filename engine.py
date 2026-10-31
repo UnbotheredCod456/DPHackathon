@@ -35,11 +35,17 @@ from subagent_verifier import (
     deep_verify_and_repair_3d_html,
     deterministic_self_heal_html,
 )
+from universal_physics_compiler import (
+    compile_universal_3d_concept,
+    sanitize_curriculum_dict,
+    strip_combining_arrows,
+    universal_physics_accuracy_audit,
+)
 
 load_dotenv()
 
-# Strict <10-second SLA budget so a teacher speaking into a microphone gets a 3D animation in <10s
-VOICE_TO_3D_SLA_SECONDS = 8.0
+# 15-second SLA budget so a teacher speaking ANY physics concept gets a verified 3D model within 15s
+VOICE_TO_3D_SLA_SECONDS = 13.5
 
 # Stateful Interaction Lineage Store (tracks multi-turn chains for judge inspection)
 INTERACTION_LINEAGE: List[Dict[str, Any]] = []
@@ -63,6 +69,7 @@ STRICT TECHNICAL & NUMERICAL PHYSICS REQUIREMENTS:
    - Magnetic Lorentz forces (F = qv x B) MUST use a Boris rotation step so kinetic energy remains strictly constant.
    - Orbital mechanics MUST use Velocity-Verlet integration so Kepler area sweep rate (dA/dt = L/2m) is conserved.
    - Nonlinear coupled oscillators MUST use 4th-order Runge-Kutta (RK4).
+   - NEVER use Unicode combining right arrow characters (U+20D7) as they render as missing boxes (`▯`) in browser fonts; use clean plain symbols (`F_net`, `v`, `B`, `tau`, `p`).
 8. AUTONOMOUS VERIFICATION TELEMETRY HEARTBEAT (REQUIRED):
    Every generated 3D simulation MUST post `physicraft_telemetry` once per second to the parent window:
    ```javascript
@@ -82,18 +89,18 @@ STRICT TECHNICAL & NUMERICAL PHYSICS REQUIREMENTS:
 """
 
 SYSTEM_PROMPT_CURRICULUM_SUBAGENT = """You are the PhysiCraft AP Physics Curriculum Subagent (gemini-3.8-flash).
-Given a teacher's physics lesson request, return ONLY valid JSON with these exact keys:
+Given a teacher's physics lesson request, return ONLY valid JSON with these exact keys (NEVER use U+20D7 combining vector arrows; use plain symbols like F_net, v, B, p):
 {
   "concept": "Short title of the AP Physics concept",
-  "equations": ["Equation 1 in clean Unicode math", "Equation 2", "Equation 3"],
-  "teacher_guide": "2-3 sentences telling Sarah how to demo this 3D simulation to build student intuition.",
+  "equations": ["Equation 1 in clean Unicode math (no U+20D7 combining arrows)", "Equation 2", "Equation 3"],
+  "teacher_guide": "2-3 sentences explaining the complete physical mechanism and how to demo this 3D simulation.",
   "misconception_alert": "1-2 sentences highlighting the #1 common student misconception this 3D view fixes.",
   "intuition_questions": [
     "Question 1 asking students to predict what happens when they move a slider",
     "Question 2 about vector directions or conservation laws",
     "Question 3 connecting the 3D visual to real-world physics"
   ],
-  "tts_narration": "An engaging, energetic 2-3 sentence spoken explanation (approx 15 seconds) that Sarah can play aloud to introduce the simulation."
+  "tts_narration": "An engaging, complete 3-sentence spoken physics explanation (approx 15 seconds) that explains the governing equations and 3D vectors."
 }
 """
 
@@ -189,157 +196,37 @@ def verify_and_instrument_3d_html(html: str) -> Tuple[str, Dict[str, Any]]:
 def build_physics_accuracy_audit(prompt: str) -> Dict[str, Any]:
     """
     Phase 1 Pre-Modeling Physics Accuracy & Conservation Law Audit:
-    Validates that the physics concept spoken by the teacher is physically accurate,
+    Validates that ANY physics concept spoken by the teacher is physically accurate,
     enforces conservation invariants, corrects any prompt-level misconceptions, and
     specifies the exact symplectic integrator and 3D vector visualizers before 3D modeling begins.
     """
-    p_low = (prompt or "").lower()
-
-    if any(k in p_low for k in ["flux", "faraday", "induction", "induced", "emf", "lenz", "coil", "generator"]):
-        return {
-            "physically_accurate": True,
-            "domain": "AP Physics C: Electricity & Magnetism",
-            "verified_law": "Faraday-Lenz Law of Electromagnetic Induction: Φ_B = B⃗ · A⃗ = B·A·cos(θ),  ℰ = -N · dΦ_B/dt",
-            "conservation_invariants": [
-                "Lenz's Law Conservation of Energy: Induced current opposes ΔΦ_B",
-                "Phase Quadrature: |ℰ| is maximum when Φ_B = 0 (θ = 90°), and ℰ = 0 when |Φ_B| is maximum (θ = 0°)",
-            ],
-            "required_solver": "Exact Analytical Phase & Trigonometric Flux Integrator (Zero Amplitude Drift)",
-            "vector_visualizers": [
-                "Surface Normal n̂ (Cyan #22d3ee)",
-                "Uniform Magnetic Field B⃗ (Amber #f59e0b)",
-                "Induced EMF / Current I_ind (Magenta #f43f5e)",
-            ],
-            "verdict": "Verified: Magnetic flux dot-product geometry & Lenz's Law polarity checked prior to 3D modeling.",
-        }
-
-    if any(k in p_low for k in ["lorentz", "cyclotron", "helical", "spiral", "charged particle", "qvxB", "qvxb"]):
-        return {
-            "physically_accurate": True,
-            "domain": "AP Physics C: Electricity & Magnetism",
-            "verified_law": "Magnetic Lorentz Force: F⃗ = q(E⃗ + v⃗ × B⃗),  r_c = m·v_⊥ / (|q|·B)",
-            "conservation_invariants": [
-                "Zero Magnetic Work: F⃗_B ⊥ v⃗ ⇒ dE_k/dt = 0 (Speed |v⃗| strictly conserved when E = 0)",
-                "Right-Hand Rule Cross-Product Chirality preserved in 3D coordinates",
-            ],
-            "required_solver": "Boris Symplectic Rotation Step (Strictly Energy-Conserving)",
-            "vector_visualizers": [
-                "Velocity Vector v⃗ (Cyan #22d3ee)",
-                "Magnetic Lorentz Force F⃗_B (Magenta #f43f5e)",
-                "Magnetic Field Lines B⃗ (Amber #f59e0b)",
-            ],
-            "verdict": "Verified: Boris rotation enforced so magnetic force bends trajectory without altering kinetic energy.",
-        }
-
-    if any(k in p_low for k in ["kepler", "orbit", "planet", "gravitation", "satellite", "ellipse", "perihelion"]):
-        return {
-            "physically_accurate": True,
-            "domain": "AP Physics C: Mechanics — Gravitation",
-            "verified_law": "Newtonian Gravitation & Kepler's 2nd Law: F⃗ = -G·M·m / r² r̂,  dA/dt = L / (2m) = const",
-            "conservation_invariants": [
-                "Conservation of Angular Momentum L = m·r × v ⇒ Equal Area Sweep Rate dA/dt",
-                "Conservation of Total Mechanical Energy E = ½mv² - GMm/r with Math.max(1.5, r*r) softening",
-            ],
-            "required_solver": "Symplectic Velocity-Verlet Integrator with Singularity Softening",
-            "vector_visualizers": [
-                "Orbital Velocity v⃗ (Cyan #22d3ee)",
-                "Centripetal Gravity Force F⃗_g (Magenta #f43f5e)",
-                "Equal-Area Kepler Sweep Sectors (Alternating Cyan/Sky Polygons)",
-            ],
-            "verdict": "Verified: Symplectic Velocity-Verlet selected to prevent artificial Euler orbital spiraling.",
-        }
-
-    if any(k in p_low for k in ["pendulum", "chaos", "chaotic", "coupled", "lagrangian", "oscillator"]):
-        return {
-            "physically_accurate": True,
-            "domain": "AP Physics C: Mechanics — Nonlinear Dynamics",
-            "verified_law": "Coupled Euler-Lagrange Equations for Double Pendulum (L = T - V)",
-            "conservation_invariants": [
-                "Total Mechanical Energy E = T + V bounded under 4th-Order Runge-Kutta integration",
-                "Lyapunov divergence demonstrated via Δθ₀ = 0.001 rad shadow pendulum",
-            ],
-            "required_solver": "4th-Order Runge-Kutta (RK4) Coupled Differential Equation Solver",
-            "vector_visualizers": [
-                "Primary Bob Phase Trail (Cyan #38bdf8)",
-                "Divergent Shadow Trail Δθ₀ = 0.001 rad (Magenta #f43f5e)",
-            ],
-            "verdict": "Verified: Full nonlinear trigonometric ODEs integrated via RK4 (no small-angle approximation).",
-        }
-
-    if any(k in p_low for k in ["rutherford", "alpha", "coulomb", "scattering", "nucleus", "gold foil"]):
-        return {
-            "physically_accurate": True,
-            "domain": "AP Physics 2 / Modern Physics — Electrostatic Scattering",
-            "verified_law": "Rutherford Coulomb Repulsion: F⃗ = (1/4πε₀)·(2e·Ze / r²) r̂,  b ∝ cot(θ/2)",
-            "conservation_invariants": [
-                "Hyperbolic Trajectory Conservation of Energy & Angular Momentum",
-                "Singularity Softening Math.max(1.5, r * r) enforced at closest approach r_min",
-            ],
-            "required_solver": "Symplectic Velocity-Verlet with Math.max(1.5, r * r) Softening",
-            "vector_visualizers": [
-                "Alpha Particle Velocity v⃗ (Cyan #22d3ee)",
-                "Coulomb Repulsive Force F⃗_C (Magenta #f43f5e)",
-            ],
-            "verdict": "Verified: Repulsive inverse-square Coulomb potential validated with softened r_min bound.",
-        }
-
-    if any(k in p_low for k in ["wave", "ripple", "interference", "diffraction", "slit", "superposition"]):
-        return {
-            "physically_accurate": True,
-            "domain": "AP Physics 1 & 2 — Wave Superposition & Interference",
-            "verified_law": "Linear Wave Superposition: z(r₁, r₂, t) = A·sin(k·r₁ - ωt) + A·sin(k·r₂ - ωt + Δφ)",
-            "conservation_invariants": [
-                "Constructive Antinodes at Δr = mλ; Destructive Nodes at Δr = (m + ½)λ",
-                "Energy redistributed from nodal lines to antinodal crests (total wave energy conserved)",
-            ],
-            "required_solver": "3D Surface Phase Superposition with Softened Radial Attenuation",
-            "vector_visualizers": [
-                "Coherent Source S₁ Phase Vector (Cyan #22d3ee)",
-                "Coherent Source S₂ Phase Vector (Magenta #f43f5e)",
-            ],
-            "verdict": "Verified: Coherent two-source wave equation and path-length difference criteria validated.",
-        }
-
-    return {
-        "physically_accurate": True,
-        "domain": "AP Physics C: Mechanics — 3D Aerodynamics & Kinematics",
-        "verified_law": "Newton's 2nd Law with Quadratic Drag & Magnus Lift: F⃗_net = m·g⃗ - ½ρC_dA|v⃗|v⃗ + S(ω⃗ × v⃗)",
-        "conservation_invariants": [
-            "Cross-product Magnus force F⃗_M = S(ω⃗ × v⃗) perpendicular to spin axis ω⃗ and velocity v⃗",
-            "Asymmetric trajectory comparing real aerodynamic drag vs. ideal vacuum parabola",
-        ],
-        "required_solver": "3D Vector Kinematics Integrator with Vacuum Reference Trajectory",
-        "vector_visualizers": [
-            "Velocity Vector v⃗ (Cyan #22d3ee)",
-            "Lateral Magnus Lift Force F⃗_M (Magenta #f43f5e)",
-        ],
-        "verdict": "Verified: 3D vector cross-product Magnus force and quadratic drag equations validated prior to modeling.",
-    }
+    return universal_physics_accuracy_audit(prompt)
 
 
-def synthesize_parametric_3d_lab(prompt: str) -> Dict[str, Any]:
+def synthesize_parametric_3d_lab(prompt: str, physics_audit: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
-    Parametric 3D Physics Synthesizer (Subagent 1 + Zero-Downtime Demo Insurance):
-    Generates bespoke, interactive 3D Three.js labs for spoken teacher concepts:
+    Universal 3D Physics Concept Synthesizer (Subagent 1 + Universal Physics Compiler):
+    Compiles ANY spoken teacher physics concept into an accurate, interactive 3D Three.js simulation:
+    - Inclined Plane / Box Moving Down a Ramp (with 4-vector Free-Body Diagram: m*g, F_N, f_k, F_net)
+    - Hooke's Law Spring-Mass Harmonic Oscillator (3D helical coil + K vs U_s energy bars)
+    - Elastic & Inelastic Collisions (Conservation of Linear Momentum p = m1*v1 + m2*v2)
+    - Rotational Dynamics & Torque (tau = r x F right-hand rule cross product)
+    - Geometric Optics: Snell's Law Refraction & Total Internal Reflection
+    - Ideal Gas Law & Kinetic Theory of Gases (3D molecular collisions P*V = N*k_B*T)
     - Magnetic Flux & Faraday's Law (`Φ_B = B·A·cosθ`)
     - Rutherford Coulomb Alpha Scattering
-    - Lorentz Force 3D Helical Spiral (`F⃗ = q(E⃗ + v⃗ × B⃗)`)
+    - Lorentz Force 3D Helical Spiral (`F = q(E + v × B)`)
     - Kepler's Equal-Area Orbital Mechanics (`dA/dt = L/2m`)
     - Chaotic Double Pendulum (RK4)
     - Two-Source Ripple Tank Wave Interference
     - 3D Aerodynamic Projectile & Magnus Spin Force
+    - Plus dynamic custom 3D vector-field synthesis for any other spoken physics topic
     """
-    instant_lab = get_instant_concept_lab(prompt)
-    if instant_lab is not None:
-        return instant_lab
+    universal_res = compile_universal_3d_concept(prompt, physics_audit=physics_audit)
+    if universal_res is not None:
+        return universal_res
 
     p_low = (prompt or "").lower()
-    if any(k in p_low for k in ["lorentz", "cyclotron", "helical", "spiral", "charged particle", "magnetic field"]):
-        return {"curriculum": PRESETS["lorentz"]["curriculum"], "html": PRESETS["lorentz"]["html"]}
-    if any(k in p_low for k in ["kepler", "orbit", "planet", "gravitation", "satellite", "ellipse", "perihelion"]):
-        return {"curriculum": PRESETS["kepler"]["curriculum"], "html": PRESETS["kepler"]["html"]}
-    if any(k in p_low for k in ["pendulum", "chaos", "chaotic", "coupled", "lagrangian"]):
-        return {"curriculum": PRESETS["pendulum"]["curriculum"], "html": PRESETS["pendulum"]["html"]}
 
     if any(w in p_low for w in ["wave", "ripple", "interference", "diffraction", "slit", "frequency", "wavelength"]):
         title = "3D Two-Source Ripple Tank Wave Interference"
@@ -514,11 +401,11 @@ def synthesize_parametric_3d_lab(prompt: str) -> Dict[str, Any]:
     curriculum = {
         "concept": title,
         "equations": [
-            "F⃗_net = m·g⃗ - ½ρ·C_d·A·|v⃗|v⃗ + S·(ω⃗ × v⃗)",
-            "F⃗_Magnus = S · (ω⃗ × v⃗)  (Spin-Induced Lift/Curve)",
+            "F_net = m·g - ½ρ·C_d·A·|v|v + S·(ω × v)",
+            "F_Magnus = S · (ω × v)  (Spin-Induced Lift/Curve)",
             "R_vacuum = (v₀² · sin(2θ)) / g"
         ],
-        "teacher_guide": "Compare the dashed white Ideal Vacuum Parabola against the glowing cyan real-world trajectory! Adjust the Topspin/Sidespin (ω) and Air Drag (C_d) sliders to show students how the cross-product Magnus force F⃗ = S(ω⃗ × v⃗) curves a spinning ball in 3D space.",
+        "teacher_guide": "Compare the dashed white Ideal Vacuum Parabola against the glowing cyan real-world trajectory! Adjust the Topspin/Sidespin (ω) and Air Drag (C_d) sliders to show students how the cross-product Magnus force F = S(ω × v) curves a spinning ball in 3D space.",
         "misconception_alert": "Textbooks treat projectile motion as strictly 2D in a vacuum. Orbit the camera behind the launcher to see how lateral spin bends the trajectory out of the 2D vertical plane!",
         "intuition_questions": [
             "Which direction does the magenta Magnus force vector point when you apply lateral sidespin ω_y?",
@@ -565,7 +452,7 @@ def synthesize_parametric_3d_lab(prompt: str) -> Dict[str, Any]:
   <div style="color:#38bdf8;font-weight:700;margin-bottom:2px;">🚀 3D MAGNUS & DRAG TELEMETRY</div>
   <div id="tel-range">Downrange X: 0.0 m</div>
   <div id="tel-curve">Lateral Magnus Deflection Z: 0.00 m</div>
-  <div id="tel-speed">Speed |v⃗|: 18.0 m/s</div>
+  <div id="tel-speed">Speed |v|: 18.0 m/s</div>
 </div>
 <div class="hud">
   <h3>⚽ 3D Projectile & Magnus Spin</h3>
@@ -690,7 +577,7 @@ def synthesize_parametric_3d_lab(prompt: str) -> Dict[str, Any]:
 
       document.getElementById('tel-range').textContent = `Downrange X: ${(pos.x + 14).toFixed(1)} m`;
       document.getElementById('tel-curve').textContent = `Lateral Magnus Deflection Z: ${pos.z.toFixed(2)} m`;
-      document.getElementById('tel-speed').textContent = `Speed |v⃗|: ${speed.toFixed(1)} m/s`;
+      document.getElementById('tel-speed').textContent = `Speed |v|: ${speed.toFixed(1)} m/s`;
     }
     controls.update();
     renderer.render(scene, camera);
@@ -709,7 +596,7 @@ def synthesize_parametric_3d_lab(prompt: str) -> Dict[str, Any]:
 </script>
 </body>
 </html>"""
-    return {"curriculum": curriculum, "html": html}
+    return {"curriculum": sanitize_curriculum_dict(curriculum), "html": strip_combining_arrows(html)}
 
 
 async def run_guardrail_router(prompt: str) -> Dict[str, Any]:
@@ -787,7 +674,7 @@ async def run_curriculum_subagent(prompt: str) -> Dict[str, Any]:
 
     try:
         interaction = await asyncio.to_thread(_call)
-        parsed = extract_json(interaction.output_text or "")
+        parsed = sanitize_curriculum_dict(extract_json(interaction.output_text or ""))
         if not parsed.get("concept"):
             raise ValueError("Fallback curriculum structure needed")
         latency = round((time.perf_counter() - t0) * 1000)
@@ -854,7 +741,7 @@ async def run_central_argon_high_coordinator(
                 "You are the PhysiCraft Central Lead Physics Auditor (gemini-4-argon, thinking_level='high'). "
                 "FIRST check that the physics in the teacher's spoken request is physically accurate and obeys conservation laws "
                 "(correcting any misconception if present), THEN specify the exact governing law, conservation invariants, "
-                "symplectic numerical solver, and 3D vector arrows in 1 JSON object:\n"
+                "symplectic numerical solver, and 3D vector arrows in 1 JSON object (NEVER use U+20D7 combining arrows):\n"
                 "{\"physically_accurate\": true, \"verified_law\": \"...\", \"conservation_invariants\": [\"...\"], "
                 "\"required_solver\": \"...\", \"vector_visualizers\": [\"...\"], \"verdict\": \"...\"}\n"
                 f"Teacher Spoken Prompt: {prompt}"
@@ -866,8 +753,8 @@ async def run_central_argon_high_coordinator(
         return client.interactions.create(**kwargs)
 
     try:
-        interaction = await asyncio.wait_for(asyncio.to_thread(_call), timeout=2.8)
-        parsed = extract_json(interaction.output_text or "")
+        interaction = await asyncio.wait_for(asyncio.to_thread(_call), timeout=3.5)
+        parsed = sanitize_curriculum_dict(extract_json(interaction.output_text or ""))
         merged_audit = {**base_audit, **{k: v for k, v in parsed.items() if v}}
         latency = round((time.perf_counter() - t0) * 1000)
         iid = getattr(interaction, "id", None)
@@ -899,7 +786,7 @@ async def run_central_argon_high_coordinator(
             previous_interaction_id,
             latency,
             "high",
-            f"Physics Verified (<10s SLA): {base_audit['verified_law'][:55]}",
+            f"Physics Verified (<15s SLA): {base_audit['verified_law'][:55]}",
         )
         return {
             "model": "gemini-4-argon",
@@ -920,9 +807,9 @@ async def run_argon_3d_architect(
 ) -> Dict[str, Any]:
     """
     Subagent 1 & 2 Pipeline:
-    - Subagent 1 (`subagent_simulations.py`, `gemini-4-argon` `thinking_level="medium"`):
-      Synthesizes 3D Three.js animation (including instant <50ms Magnetic Flux `Φ_B = B·A·cosθ` & Rutherford labs,
-      plus stateful `previous_interaction_id` multi-turn refinements).
+    - Subagent 1 (`subagent_simulations.py` + `universal_physics_compiler.py`, `gemini-4-argon` `thinking_level="medium"`):
+      Synthesizes 3D Three.js animation for ANY spoken physics concept within <15s,
+      plus stateful `previous_interaction_id` multi-turn refinements.
     - Subagent 2 (`subagent_verifier.py`, `gemini-4-argon` `thinking_level="medium"`):
       Runs `deep_verify_and_repair_3d_html` to enforce `Math.max(1.5, r * r)` singularity softening and 1Hz telemetry.
     """
@@ -934,12 +821,12 @@ async def run_argon_3d_architect(
             base_html = INTERACTION_SCENE_CACHE[previous_interaction_id]
             refined_html = apply_multiturn_refinement(base_html, prompt)
         else:
-            synth = synthesize_parametric_3d_lab(prompt)
+            synth = synthesize_parametric_3d_lab(prompt, physics_audit=physics_audit)
             refined_html = synth["html"]
             if previous_interaction_id:
                 refined_html = apply_multiturn_refinement(refined_html, prompt)
 
-        verified_html, verification_report = verify_and_instrument_3d_html(refined_html)
+        verified_html, verification_report = verify_and_instrument_3d_html(strip_combining_arrows(refined_html))
         sim_id = f"argon-med-{uuid.uuid4().hex[:8]}"
         INTERACTION_SCENE_CACHE[sim_id] = verified_html
         latency = max(12, round((time.perf_counter() - t0) * 1000))
@@ -979,7 +866,7 @@ async def run_argon_3d_architect(
         f"\"{prompt}\"{audit_context}\n"
         "Remember: Output ONLY the complete HTML file starting with <!DOCTYPE html> and include interactive range sliders, "
         "dynamic 3D vector arrows (ArrowHelper), numerical stability (`Math.max(1.5, r*r)` softening, zero NaN), "
-        "and the `physicraft_telemetry` postMessage heartbeat."
+        "NEVER use U+20D7 combining arrows, and include the `physicraft_telemetry` postMessage heartbeat."
     )
 
     def _call(msg: str, prev_id: Optional[str]):
@@ -1000,7 +887,7 @@ async def run_argon_3d_architect(
             asyncio.to_thread(_call, user_message, previous_interaction_id),
             timeout=VOICE_TO_3D_SLA_SECONDS,
         )
-        raw_html = extract_html(interaction.output_text or "")
+        raw_html = strip_combining_arrows(extract_html(interaction.output_text or ""))
         iid = getattr(interaction, "id", None)
         verified_html, report = verify_and_instrument_3d_html(raw_html)
 
@@ -1015,7 +902,7 @@ async def run_argon_3d_architect(
                 asyncio.to_thread(_call, repair_msg, iid),
                 timeout=4.0,
             )
-            raw_html2 = extract_html(interaction2.output_text or "")
+            raw_html2 = strip_combining_arrows(extract_html(interaction2.output_text or ""))
             iid = getattr(interaction2, "id", iid)
             verified_html, report = verify_and_instrument_3d_html(raw_html2)
             report["self_healed_preflight"] = True
@@ -1037,17 +924,17 @@ async def run_argon_3d_architect(
         if previous_interaction_id and previous_interaction_id in INTERACTION_SCENE_CACHE:
             fallback_raw = apply_multiturn_refinement(INTERACTION_SCENE_CACHE[previous_interaction_id], prompt)
         else:
-            synth = synthesize_parametric_3d_lab(prompt)
+            synth = synthesize_parametric_3d_lab(prompt, physics_audit=physics_audit)
             fallback_raw = synth["html"]
             if previous_interaction_id:
                 fallback_raw = apply_multiturn_refinement(fallback_raw, prompt)
-        verified_html, report = verify_and_instrument_3d_html(fallback_raw)
+        verified_html, report = verify_and_instrument_3d_html(strip_combining_arrows(fallback_raw))
         fb_id = f"fallback-{uuid.uuid4().hex[:8]}"
         INTERACTION_SCENE_CACHE[fb_id] = verified_html
         latency = round((time.perf_counter() - t0) * 1000)
-        record_lineage_event("subagent_1_3d_fallback", "gemini-4-argon", fb_id, previous_interaction_id, latency, "medium", "<10s SLA Guaranteed")
+        record_lineage_event("subagent_1_3d_fallback", "gemini-4-argon", fb_id, previous_interaction_id, latency, "medium", "<15s SLA Guaranteed")
         return {
-            "model": "gemini-4-argon (Subagent 1 <10s Fast-Path)",
+            "model": "gemini-4-argon (Subagent 1 <15s Fast-Path)",
             "interaction_id": fb_id,
             "previous_interaction_id": previous_interaction_id,
             "latency_ms": latency,

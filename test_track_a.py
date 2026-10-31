@@ -190,10 +190,49 @@ def test_fastapi_endpoints():
     print("✓ All FastAPI Track A endpoints (generate, multi-turn, self-heal, FERPA gate, lineage) verified!")
 
 
+def test_universal_physics_concepts_and_zero_missing_glyphs():
+    client = TestClient(fastapi_app.app)
+    prompts_and_expectations = [
+        ("show box moving down a ramp", "Inclined Plane", "F_N = m*g*cos(θ)"),
+        ("explain a mass on a spring Hooke's law harmonic oscillator", "Spring", "Hooke"),
+        ("show elastic collision conservation of momentum between two spheres", "Collision", "Momentum"),
+        ("explain torque and moment of inertia on a spinning flywheel", "Torque", "τ = r × F"),
+        ("demonstrate Snell's law laser refraction and total internal reflection", "Snell", "sin(θ"),
+        ("show ideal gas molecules in a piston cylinder", "Ideal Gas", "N*k_B*T"),
+        ("explain electric dipole field lines and equipotential surfaces", "3D Interactive Lab", "Symplectic"),
+    ]
+
+    for prompt, expected_concept_substr, expected_law_substr in prompts_and_expectations:
+        res = client.post("/api/generate", json={"prompt": prompt})
+        assert res.status_code == 200, f"Failed on prompt: {prompt}"
+        payload = res.json()
+        assert payload["verification"]["passed"] is True, f"Verification failed on {prompt}: {payload['verification']}"
+        assert expected_concept_substr.lower() in payload["curriculum"]["concept"].lower(), (
+            f"Expected '{expected_concept_substr}' in '{payload['curriculum']['concept']}' for prompt '{prompt}'"
+        )
+        combined_audit_text = (
+            payload["physics_accuracy_check"]["verified_law"]
+            + " "
+            + payload["physics_accuracy_check"]["required_solver"]
+            + " "
+            + " ".join(payload["physics_accuracy_check"].get("conservation_invariants", []))
+        ).lower()
+        assert expected_law_substr.lower() in combined_audit_text, (
+            f"Expected '{expected_law_substr}' in '{combined_audit_text}' for prompt '{prompt}'"
+        )
+        assert "ArrowHelper" in payload["html"], f"Missing 3D vector ArrowHelper in {prompt}"
+        # Ensure ZERO combining right arrow characters (U+20D7) anywhere in response
+        raw_text = res.text
+        assert "\u20d7" not in raw_text, f"Found U+20D7 combining arrow in response for: {prompt}"
+
+    print("✓ Universal Physics Compiler (Ramp/FBD, Spring SHM, Collisions, Torque, Optics, Ideal Gas, Custom) & Zero U+20D7 verified!")
+
+
 if __name__ == "__main__":
     test_presets_verification()
     test_auto_instrumentation()
     test_voice_to_3d_magnetic_flux_and_rutherford()
     test_ferpa_pii_redaction_gate()
     test_fastapi_endpoints()
+    test_universal_physics_concepts_and_zero_missing_glyphs()
     print("\n🎉 ALL TRACK A VERIFICATION TESTS PASSED!")
